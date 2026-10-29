@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+defineOptions({ name: "WenjiangTasks" });
+import { computed, onDeactivated, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { Message } from "@arco-design/web-vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -27,10 +28,18 @@ const selectedMerchant = computed(() =>
 const dispatchVisible = ref(false);
 const merchantId = ref("");
 const vehicle = ref(vehicles[0]!.plate);
+let lastTaskFullPath = "";
+onDeactivated(() => {
+  drawer.value = false;
+  dispatchVisible.value = false;
+});
 
 watch(
-  () => route.query,
-  (query) => {
+  () => route.fullPath,
+  (fullPath) => {
+    if (route.path !== "/tasks" || fullPath === lastTaskFullPath) return;
+    lastTaskFullPath = fullPath;
+    const query = route.query;
     keyword.value = typeof query.keyword === "string" ? query.keyword : "";
     status.value =
       typeof query.status === "string" &&
@@ -187,11 +196,11 @@ function exportRows() {
 </script>
 
 <template>
-  <div class="page-content">
+  <div class="gi_page page-content">
     <PageHeader
       title="收运作业"
       description="统一管理当日收运计划，跟踪商户、车辆与任务进度。"
-      eyebrow="作业管理 / COLLECTION"
+      module="运营管理"
     >
       <a-button @click="exportRows"
         ><template #icon><AppIcon name="download" :size="16" /></template
@@ -236,7 +245,7 @@ function exportRows() {
         :columns="columns"
         :data="rows.slice((page - 1) * 8, page * 8)"
         :pagination="false"
-        :bordered="false"
+        stripe
         :scroll="{ x: 1117 }"
         row-key="id"
       >
@@ -391,10 +400,7 @@ function exportRows() {
         >
         <div class="modal-actions">
           <a-button @click="dispatchVisible = false">取消</a-button
-          ><a-button
-            type="primary"
-            :disabled="!merchantId"
-            html-type="submit"
+          ><a-button type="primary" :disabled="!merchantId" html-type="submit"
             >确认派发</a-button
           >
         </div></a-form

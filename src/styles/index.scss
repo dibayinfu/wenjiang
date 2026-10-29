@@ -1,0 +1,5 @@
+// 龙安基础样式原样迁入；仅将 Sass 模块入口改为 @use。
+@use './base.scss';
+@use './global.scss';
+@use './scrollbar-reset.scss';
+@use './pages.scss';

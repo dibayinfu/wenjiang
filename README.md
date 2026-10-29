@@ -1,10 +1,10 @@
 # 温江餐厨收运管理平台
 
-参考龙安项目的 Vue 3 / Arco Design 蓝白后台风格、指标卡片、表格筛选和详情抽屉，搭建可独立运行的产品原型。当前功能仅为示例，后续按温江实际需求迭代。
+沿用龙安项目的 ContiNew Admin / Arco Design 前端框架：默认侧栏布局 / LayoutMix 混合布局、分组侧栏、面包屑与顶部业务导航、card-gutter 多页签、vue-gi-demo 主题及 Arco 样式覆盖。框架文件均已迁入本目录，温江独立运行。当前功能仅为示例，后续按实际需求迭代。
 
 - 在线原型：https://dibayinfu.github.io/wenjiang/
 - GitHub 仓库：git@github.com:dibayinfu/wenjiang.git
-- 技术栈：Vue 3、TypeScript、Vite、Vue Router、Arco Design。
+- 技术栈：Vue 3、TypeScript、Vite、Vue Router、Pinia、Arco Design、vue-gi-demo。
 - **只有前端，所有商户、人员、车辆、地址和收运数据均为虚构模拟数据。** 无登录、后端、数据库、地图密钥或外部业务接口。
 
 ## 本地运行
@@ -18,6 +18,14 @@ npm run dev
 ```
 
 打开 http://127.0.0.1:5174 。停止预览按 `Ctrl+C`。
+
+### VSCode 一键启动
+
+在 VSCode 中打开整个 `wenjiang` 文件夹，首次运行先执行 `npm ci`。
+打开 **Run and Debug（运行和调试）**，选择 **温江前端：启动开发环境**，点击绿色运行按钮或按 `F5`。
+配置位于 `.vscode/launch.json`，启动项目自身的 Vite 开发服务，准备就绪后自动打开默认浏览器。
+点击调试工具栏的停止按钮或按 `Shift+F5` 可关闭开发服务。
+使用 `${workspaceFolder}` 定位项目，移动文件夹后无需修改路径。
 
 ```sh
 npm test          # 模拟数据、状态流转、派单约束、缓存校验、CSV 安全
@@ -34,6 +42,15 @@ npm run preview  # http://127.0.0.1:4174，预览 dist 产物
 | 餐厨商户 | `#/merchants` | 商户档案、筛选、详情、今日收运记录、新增商户、CSV 导出          |
 
 可体验业务闭环：新增商户 → 派发任务 → 开始收运 → 完成收运 → 总览统计与商户记录同步更新。
+
+## 框架与龙安对齐
+
+- 使用同一 Arco 组件库版本 `2.57.0` 与 `@arco-themes/vue-gi-demo@0.0.51`，按龙安入口编译 Less 主题。
+- `src/styles/arco-ui/`、基础样式、布局工具类和滚动条样式从龙安迁入；未使用上一版的自定义后台壳。
+- 默认对齐龙安线上侧栏 + 面包屑布局；在项目配置中可切换为龙安 `LayoutMix` 混合布局。56px 顶栏、分组侧栏、多页签、页面刷新、主题切换保持一致。
+- 标题与指标卡基于龙安 `ModuleHeader` / `MetricGrid`；表格、输入框、分页、抽屉沿用同套 Arco 覆盖样式。
+- 移除认证、权限、真实消息和后端系统配置，保留温江自身的三页业务及模拟数据。
+- 框架许可证和来源见 `THIRD_PARTY_NOTICES.md` 与 `LICENSES/continew-admin.txt`。
 
 ## 模拟数据
 
@@ -53,14 +70,19 @@ npm run preview  # http://127.0.0.1:4174，预览 dist 产物
 wenjiang/
 ├── .github/workflows/pages.yml   # dev/PR 验证，main 自动发布
 ├── public/                      # 项目自身静态资源
+├── .vscode/launch.json           # VSCode 一键启动
 ├── src/
-│   ├── components/              # 标题、指标、状态和图标
+│   ├── layout/                  # 龙安 LayoutMix 布局、Logo、Menu、Tabs、顶部工具栏
+│   ├── config/setting.ts         # 龙安同款布局与主题默认值
+│   ├── stores/                  # Pinia 主题、菜单和页签状态
+│   ├── styles/                  # 龙安基础样式、arco-ui 覆盖与温江业务布局
+│   ├── components/              # 龙安同款标题、指标卡与 Arco 图标
 │   ├── mock/                    # 数据模型、生成器、独立状态
 │   ├── utils/csv.ts             # 安全 CSV 导出
 │   ├── views/                   # 三个业务示例页
-│   ├── App.vue                  # 后台布局
+│   ├── App.vue                  # 全局 Arco Provider
 │   ├── router.ts                # Hash 路由
-│   └── styles.css               # 独立样式与响应式适配
+│   └── main.ts                  # 与龙安相同主题入口、组件注册
 ├── tests/model.test.mjs
 ├── package.json
 └── package-lock.json

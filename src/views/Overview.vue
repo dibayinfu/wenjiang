@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: "WenjiangOverview" });
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "../components/AppIcon.vue";
@@ -82,31 +83,17 @@ function openTasks(street?: string) {
 </script>
 
 <template>
-  <div class="page-content">
+  <div class="gi_page page-content">
     <PageHeader
       title="运营总览"
       description="从商户到收运，让每一份餐厨垃圾去向清晰。"
-      eyebrow="运营工作台 / OVERVIEW"
+      module="运营管理"
     >
       <a-button type="primary" @click="openTasks()"
         >查看收运作业<template #icon
           ><AppIcon name="truck" :size="17" /></template
       ></a-button>
     </PageHeader>
-    <div class="overview-notice">
-      <span class="notice-icon"><AppIcon name="leaf" :size="22" /></span>
-      <div>
-        <strong>今天的收运，有序进行中</strong>
-        <p>
-          已完成 {{ summary.completed }} 条收运任务，服务
-          {{
-            summary.servicedMerchants
-          }}
-          家商户。继续跟进待收运任务，让城市更洁净一点。
-        </p>
-      </div>
-      <a-tag color="arcoblue">模拟数据</a-tag>
-    </div>
     <MetricGrid :items="metrics" />
     <div class="overview-grid">
       <section class="panel trend-panel">
@@ -169,7 +156,7 @@ function openTasks(street?: string) {
         <div
           class="progress-ring"
           :style="{
-            background: `conic-gradient(#165dff 0 ${summary.completionRate}%, #edf2fb ${summary.completionRate}% 100%)`,
+            background: `conic-gradient(rgb(var(--primary-6)) 0 ${summary.completionRate}%, var(--color-fill-2) ${summary.completionRate}% 100%)`,
           }"
         >
           <div>

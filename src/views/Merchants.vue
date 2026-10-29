@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+defineOptions({ name: "WenjiangMerchants" });
+import { computed, onDeactivated, reactive, ref, watch } from "vue";
 import { Message } from "@arco-design/web-vue";
 import { useRouter } from "vue-router";
 import AppIcon from "../components/AppIcon.vue";
@@ -25,6 +26,10 @@ const merchantTasks = computed(() =>
   demo.tasks.filter((t) => t.merchantId === selectedId.value),
 );
 const addVisible = ref(false);
+onDeactivated(() => {
+  drawer.value = false;
+  addVisible.value = false;
+});
 const newMerchant = () => ({
   name: "",
   street: streets[0] as Street,
@@ -169,11 +174,11 @@ function exportRows() {
 </script>
 
 <template>
-  <div class="page-content">
+  <div class="gi_page page-content">
     <PageHeader
       title="餐厨商户"
       description="建立产废单位档案，连接每一家商户与日常收运服务。"
-      eyebrow="基础档案 / MERCHANTS"
+      module="基础档案"
       ><a-button @click="exportRows"
         ><template #icon><AppIcon name="download" :size="16" /></template
         >导出档案</a-button
@@ -217,7 +222,7 @@ function exportRows() {
         :data="rows.slice((page - 1) * 8, page * 8)"
         :columns="columns"
         :pagination="false"
-        :bordered="false"
+        stripe
         :scroll="{ x: 1005 }"
         row-key="id"
         ><template #name="{ record }"
