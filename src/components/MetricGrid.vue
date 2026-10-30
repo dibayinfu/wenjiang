@@ -34,7 +34,7 @@ defineProps<{
   flex-wrap: wrap;
 }
 .metric-card {
-  flex-shrink: 0;
+  flex: 1;
   padding: 16px 20px;
   background: var(--color-bg-2);
   border-radius: 6px;

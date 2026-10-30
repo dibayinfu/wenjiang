@@ -12,10 +12,10 @@ interface PageTab {
 export const useTabsStore = defineStore("tabs", () => {
   const tabList = ref<PageTab[]>([
     {
-      path: "/overview",
-      fullPath: "/overview",
-      title: "运营总览",
-      name: "WenjiangOverview",
+      path: "/reports/vehicles",
+      fullPath: "/reports/vehicles",
+      title: "车辆线路日报",
+      name: "WenjiangVehicleSummary",
     },
   ]);
   const reloadKey = ref(0);
@@ -32,7 +32,7 @@ export const useTabsStore = defineStore("tabs", () => {
     else tabList.value[index] = tab;
   }
   function closeCurrent(path: string, router: Router) {
-    if (path === "/overview") return;
+    if (path === "/reports/vehicles") return;
     const index = tabList.value.findIndex((tab) => tab.path === path);
     if (index === -1) return;
     tabList.value.splice(index, 1);
@@ -41,7 +41,7 @@ export const useTabsStore = defineStore("tabs", () => {
   }
   function closeOther(path: string) {
     tabList.value = tabList.value.filter(
-      (tab) => tab.path === "/overview" || tab.path === path,
+      (tab) => tab.path === "/reports/vehicles" || tab.path === path,
     );
   }
   return {

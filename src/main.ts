@@ -1,6 +1,11 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import {
+  DatePicker,
+  TimePicker,
+  Textarea,
+  Slider,
+  Timeline,
   Alert,
   Avatar,
   Breadcrumb,
@@ -36,6 +41,11 @@ import { router } from "./router";
 
 const app = createApp(App);
 for (const component of [
+  DatePicker,
+  TimePicker,
+  Textarea,
+  Slider,
+  Timeline,
   Alert,
   Avatar,
   Breadcrumb,

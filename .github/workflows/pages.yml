@@ -30,6 +30,10 @@ jobs:
       - name: Test mock data and business rules
         run: npm test
       - name: Type check and build
+        env:
+          VITE_AMAP_JS_KEY: ${{ secrets.VITE_AMAP_JS_KEY }}
+          VITE_AMAP_KEY: ${{ secrets.VITE_AMAP_KEY }}
+          VITE_AMAP_SECURITY_JS_CODE: ${{ secrets.VITE_AMAP_SECURITY_JS_CODE }}
         run: npm run build
       - name: Configure Pages
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

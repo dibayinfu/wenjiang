@@ -75,7 +75,7 @@ function toggleMenu() {
           mode="horizontal"
           :selected-keys="['wenjiang']"
           :auto-open-selected="false"
-          @menu-item-click="$router.push('/overview')"
+          @menu-item-click="$router.push('/reports/vehicles')"
           ><a-menu-item key="wenjiang"
             ><template #icon><IconDashboard :size="24" /></template
             >温江餐厨</a-menu-item
@@ -84,8 +84,8 @@ function toggleMenu() {
         <a-breadcrumb v-else-if="isDesktop" class="header-breadcrumb"
           ><a-breadcrumb-item>项目工作台</a-breadcrumb-item
           ><a-breadcrumb-item>温江餐厨</a-breadcrumb-item
-          ><a-breadcrumb-item>{{
-            route.path === "/merchants" ? "基础档案" : "运营管理"
+          ><a-breadcrumb-item v-if="!route.meta.standalone">{{
+            route.meta.group || "运营管理"
           }}</a-breadcrumb-item
           ><a-breadcrumb-item>{{
             route.meta.title
@@ -102,9 +102,7 @@ function toggleMenu() {
           ><KeepAlive :key="tabs.reloadKey" :include="tabs.cacheList"
             ><component :is="Component" :key="route.path" /></KeepAlive
         ></RouterView>
-        <footer v-if="app.copyrightDisplay" class="layout-footer">
-          温江餐厨管理平台 · 产品原型 · 全部使用模拟数据
-        </footer></a-layout
+      </a-layout
       >
     </section>
     <a-drawer
