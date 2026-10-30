@@ -30,13 +30,12 @@ let loader: Promise<AMapNamespace> | undefined;
 function mapWindow() {
   return window as typeof window & {AMap?: AMapNamespace; _AMapSecurityConfig?: {securityJsCode: string}};
 }
-// 沿用龙安的JS API 2.0配置方式；配置从本项目环境变量注入。
+// 临时原型 Key 作为默认值，环境变量可覆盖。
 export function loadAmapJsApi(): Promise<AMapNamespace> {
   const host=mapWindow();
   if (host.AMap) return Promise.resolve(host.AMap);
   if (loader) return loader;
-  const key=import.meta.env.VITE_AMAP_JS_KEY || import.meta.env.VITE_AMAP_KEY;
-  if (!key) return Promise.reject(new Error('缺少高德地图配置'));
+  const key=import.meta.env.VITE_AMAP_JS_KEY || import.meta.env.VITE_AMAP_KEY || 'e1604bcf948fc18cebd9d313d756bfcf';
   if (import.meta.env.VITE_AMAP_SECURITY_JS_CODE) host._AMapSecurityConfig={securityJsCode:import.meta.env.VITE_AMAP_SECURITY_JS_CODE};
   loader=new Promise<AMapNamespace>((resolve,reject)=>{
     const script=document.createElement('script');
