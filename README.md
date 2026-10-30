@@ -43,11 +43,11 @@ npm run dev
 
 ## 高德地图与部署
 
-本地配置写入已忽略的 `.env.local`，参照 `.env.example`：
+代码内置临时原型 Key，GitHub Pages 无需配置 Key 即可构建。需要替换时，可在已忽略的 `.env.local` 中覆盖，参照 `.env.example`：
 
 - `VITE_AMAP_JS_KEY`：高德 JS API Key；兼容 `VITE_AMAP_KEY`。
 - `VITE_AMAP_SECURITY_JS_CODE`：如该Key要求安全密钥，则配置此项。
 
-构建时通过环境变量注入，源码不写实际Key。GitHub Actions 使用同名仓库 Secrets；本地地图可用不代表仓库已配置。高德底图需要联网，商户和收运数据仍为模拟数据。
+环境变量在构建时注入，优先于内置 Key；GitHub Actions 可通过同名仓库 Secrets 覆盖。高德底图需要联网，商户和收运数据仍为模拟数据。
 
 日常开发使用 `dev`。合并到 `main` 后 GitHub Actions 自动部署 Pages；本轮检查不执行提交、推送或部署。
