@@ -601,3 +601,23 @@
     border-radius: 0 4px 4px 0;
   }
 }
+
+// 22位RFID保持完整，不在编号内部折行；窄容器可横向滚动。
+.rfid-value {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  vertical-align: middle;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.rfid-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}

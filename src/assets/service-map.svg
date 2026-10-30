@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 420 270"
+              role="img"
+              aria-label="温江区域示意图，非真实地理地图"
+            >
+              <rect width="420" height="270" fill="#f3f6f8" />
+              <path
+                d="M-10 40 70 22 118 64 176 41 231 67 281 23 355 46 440 12V130l-50 22-62-19-43 35-57-13-63 32-79-20-57 30-39-15Z"
+                fill="#e8f0e8"
+              />
+              <path
+                d="m73-20 34 61-7 52 37 46-17 59 38 86M244-12l-28 64 34 57-17 48 31 48-9 83M-20 84l116 12 83-6 77 23 84-22 102 12M-10 211l92-32 68 16 96-13 82 24 116-21"
+                fill="none"
+                stroke="white"
+                stroke-width="12"
+              />
+              <path
+                d="M350-10c-72 57-21 106-61 146s-94 47-81 148"
+                stroke="#cee4f5"
+                stroke-width="19"
+                fill="none"
+              />
+              <path
+                d="m41 92 65 41 74-38 68 53 76 43"
+                stroke="#83a9ff"
+                stroke-width="3"
+                stroke-dasharray="5 6"
+                fill="none"
+              />
+              <text x="16" y="25" fill="#86909c" font-size="11">
+                温江区 · 业务示意
+              </text>
+              <text x="263" y="250" fill="#86909c" font-size="10">
+                非真实地理位置
+              </text>
+            </svg>

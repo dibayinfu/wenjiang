@@ -42,7 +42,7 @@ function close(key: string | number) {
         v-for="tab in tabs.tabList"
         :key="tab.path"
         :title="tab.title"
-        :closable="tab.path !== '/overview'"
+        :closable="tab.path !== '/reports/vehicles'"
       />
       <template #extra
         ><a-button
@@ -55,7 +55,7 @@ function close(key: string | number) {
             ><template #icon><IconMoreVertical /></template></a-button
           ><template #content
             ><a-doption
-              :disabled="route.path === '/overview'"
+              :disabled="route.path === '/reports/vehicles'"
               @click="tabs.closeCurrent(route.path, router)"
               ><template #icon><IconClose /></template>关闭当前</a-doption
             ><a-doption @click="tabs.closeOther(route.path)"
