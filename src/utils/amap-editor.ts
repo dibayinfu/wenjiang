@@ -1,11 +1,4 @@
-import {loadAmapJsApi, type AMapNamespace, type AMapInstance} from './amap';
-export interface LngLat {getLng():number;getLat():number}
-export interface MapShape {
-  setMap(map:AMapInstance|null):void;
-  getCenter?():LngLat;
-  getRadius?():number;
-  getPath?():LngLat[];
-}
+import {loadAmapJsApi, type AMapNamespace, type AMapInstance, type LngLat, type MapShape} from './amap';
 export interface MouseTool {
   circle(options:Record<string,unknown>):void;
   polygon(options:Record<string,unknown>):void;
@@ -14,8 +7,6 @@ export interface MouseTool {
 }
 export interface SearchPoi {name:string;address?:string;pname?:string;cityname?:string;adname?:string;location?:LngLat}
 export interface EditorAmap extends AMapNamespace {
-  Circle:new(options:Record<string,unknown>)=>MapShape;
-  Polygon:new(options:Record<string,unknown>)=>MapShape;
   MouseTool?:new(map:AMapInstance)=>MouseTool;
   PlaceSearch?:new(options:Record<string,unknown>)=>{search(keyword:string,callback:(status:string,result:{poiList?:{pois:SearchPoi[]};info?:string})=>void):void};
 }

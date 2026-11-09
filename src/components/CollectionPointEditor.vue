@@ -44,7 +44,7 @@ async function submit(){
         <a-form-item field="address" label="详细地址" required><a-textarea v-model="draft.address" placeholder="请输入详细地址" :max-length="200" :auto-size="{minRows:2,maxRows:3}"/></a-form-item>
         <a-form-item field="note" label="备注"><a-textarea v-model="draft.note" placeholder="请输入备注信息" :max-length="300" :auto-size="{minRows:2,maxRows:3}"/></a-form-item>
       </a-form>
-      <PointGeometryMap :position="position" :fence="draft.fence" @pick="pick" @fence="draft.fence=$event" @address="draft.address=$event"/>
+      <PointGeometryMap :position="position" :fence="draft.fence ?? undefined" @pick="pick" @fence="draft.fence=$event" @address="draft.address=$event"/>
     </div>
     <div class="point-editor-footer"><a-button @click="emit('update:visible',false)">取消</a-button><a-button type="primary" :loading="saving" @click="submit">提交</a-button></div>
   </a-modal>

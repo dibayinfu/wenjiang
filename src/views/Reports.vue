@@ -15,6 +15,7 @@ import {collectionLines} from "../mock/collection-lines";
 import {streetDictionary,merchantMatchesFilters} from "../mock/merchant-dictionaries";
 import { currentOrganization } from "../mock/manifest-templates";
 import PageHeader from "../components/PageHeader.vue";
+import CollectionEventMap from "../components/CollectionEventMap.vue";
 import CollectionPointEditor from "../components/CollectionPointEditor.vue";
 import ProductRequirements from "../components/ProductRequirements.vue";
 import StatusTag from "../components/StatusTag.vue";
@@ -26,6 +27,7 @@ import {
   sanitationReport,
 } from "../mock/reporting";
 import { weighingRows, type Weighing, resolveWeighingPoint } from "../mock/sanitation";
+import { ensureMerchantMapPoints } from "../mock/merchant-map";
 import { downloadCsv } from "../utils/csv";
 import { compareWeighbridge } from "../mock/weighbridge";
 import { manifestEnabled, findDailyManifest, type DailyManifest } from "../mock/daily-manifests";
@@ -152,6 +154,11 @@ const events = computed(() =>
 const pointEditor = ref(false);
 const editingPoint = ref<Point>();
 const pointEvent = ref<Weighing>();
+const mapEvent = ref<Weighing>();
+function showCollectionMap(row: Weighing) {
+  ensureMerchantMapPoints(demo);
+  mapEvent.value = row;
+}
 function editCollectionPoint(row: Weighing) {
   pointEvent.value = row;
   editingPoint.value = demo.points.find(point => point.id === row.pointId);
@@ -167,7 +174,7 @@ const detailListColumns = [
   { title: "所属收集点", width: 230, render: ({record}: {record: Weighing}) => demo.points.find(p => p.id === record.pointId)?.name ?? '未绑定' },
   { title: "所属机构", slotName: "organization", width: 380 },
   { title: "收集时间", dataIndex: "collectedAt", width: 180 },
-  { title: "操作", width: 180, fixed: "right" as const, render: ({record}: {record: Weighing}) => h('button', {class:'text-button', onClick:()=>editCollectionPoint(record)}, demo.points.some(p=>p.id===record.pointId) ? '编辑收集点' : '添加收集点') },
+  { title: "操作", width: 180, fixed: "right" as const, slotName: "detailAction" },
 ];
 const visibleRecords = computed(() =>
   view.value === "车辆收运明细"
@@ -415,6 +422,7 @@ onBeforeUnmount(() => {
 });
 onDeactivated(() => {
   pointEditor.value = false;
+  mapEvent.value = undefined;
   dailySelected.value = null;
   selectedWeighbridgeId.value = "";
   selectedId.value = "";
@@ -504,7 +512,14 @@ function pointLabel(r: Weighing) {
         :pagination="false"
         :scroll="{ x: 2100 }"
         row-key="id"
-        ><template #dailyManifest="{record}"><a-tooltip content="查看联单"><a-button v-if="findDailyManifest(record.date,record.merchantId)" type="text" class="report-upgrade" :aria-label="`查看${record.date}${record.name??merchantName(record.merchantId)}联单`" @click="dailySelected=findDailyManifest(record.date,record.merchantId)!"><template #icon><IconFile /></template></a-button><span v-else class="report-upgrade">待生成</span></a-tooltip></template><template #organization><span class="organization-name">{{reportOrganization}}</span></template><template #point="{ record }">{{ pointLabel(record) }}</template
+        ><template #detailAction="{ record }">
+          <a-space :size="12">
+            <button type="button" class="text-button" @click="editCollectionPoint(record)">
+              {{ demo.points.some(p => p.id === record.pointId) ? '编辑收集点' : '添加收集点' }}
+            </button>
+            <button type="button" class="text-button report-upgrade" @click="showCollectionMap(record)">查看地图</button>
+          </a-space>
+        </template><template #dailyManifest="{record}"><a-tooltip content="查看联单"><a-button v-if="findDailyManifest(record.date,record.merchantId)" type="text" class="report-upgrade" :aria-label="`查看${record.date}${record.name??merchantName(record.merchantId)}联单`" @click="dailySelected=findDailyManifest(record.date,record.merchantId)!"><template #icon><IconFile /></template></a-button><span v-else class="report-upgrade">待生成</span></a-tooltip></template><template #organization><span class="organization-name">{{reportOrganization}}</span></template><template #point="{ record }">{{ pointLabel(record) }}</template
         ><template #validity="{ record }"
           ><StatusTag :value="record.status" /></template
         ><template #action="{ record }"
@@ -574,6 +589,10 @@ function pointLabel(r: Weighing) {
         />
       </div>
     </section>
+    <a-modal :visible="!!mapEvent" title="收运位置核对" :width="'min(920px,96vw)'" :footer="false" @cancel="mapEvent = undefined">
+      <template #title><span class="report-upgrade">收运位置核对</span></template>
+      <CollectionEventMap v-if="mapEvent" :record="mapEvent" />
+    </a-modal>
     <a-drawer :visible="!!dailySelected" title="商户五联单" :width="'min(720px,96vw)'" :footer="false" @cancel="dailySelected=null">
       <template v-if="dailySelected"><a-button type="primary" :loading="downloading" @click="downloadDaily">下载PDF</a-button>
       <section class="manifest-copy"><ManifestSheet v-if="exampleSelected" :document="exampleSelected"/></section></template>
@@ -705,4 +724,5 @@ function pointLabel(r: Weighing) {
 
 <style scoped>
 .report-date-presets{white-space:nowrap}
+.text-button.report-upgrade{color:rgb(var(--danger-6))}
 </style>
