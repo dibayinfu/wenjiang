@@ -5,7 +5,18 @@ export interface AMapMarker {
   getPosition(): {getLng():number;getLat():number};
   on(event: string, handler: () => void): void;
 }
+export interface LngLat {getLng():number;getLat():number}
+export interface MapShape {
+  setMap(map:AMapInstance|null):void;
+  on(event: 'click', handler: () => void): void;
+  getCenter?():LngLat;
+  getRadius?():number;
+  getPath?():LngLat[];
+}
+interface AMapLabelMarker { getPosition(): LngLat }
+interface AMapLabelsLayer { add(markers: AMapLabelMarker[]): void }
 export interface AMapInstance {
+  add(layer: AMapLabelsLayer): void;
   destroy(): void;
   resize(): void;
   setMapStyle(style: string): void;
@@ -24,6 +35,10 @@ export interface AMapNamespace {
   plugin?(names:string[],callback:()=>void):void;
   Map: new (container: HTMLElement, options: Record<string, unknown>) => AMapInstance;
   Marker: new (options: Record<string, unknown>) => AMapMarker;
+  Circle: new (options: Record<string, unknown>) => MapShape;
+  Polygon: new (options: Record<string, unknown>) => MapShape;
+  LabelMarker: new (options: Record<string, unknown>) => AMapLabelMarker;
+  LabelsLayer: new (options: Record<string, unknown>) => AMapLabelsLayer;
   Pixel: new (x: number, y: number) => unknown;
 }
 let loader: Promise<AMapNamespace> | undefined;

@@ -2,8 +2,8 @@
 import {computed,onBeforeUnmount,onMounted,ref,watch} from 'vue';
 import {IconSearch,IconPlus,IconMinus} from '@arco-design/web-vue/es/icon';
 import {Message} from '@arco-design/web-vue';
-import {loadEditorAmap,type EditorAmap,type MouseTool,type MapShape,type SearchPoi} from '../utils/amap-editor';
-import type {AMapInstance,AMapMarker} from '../utils/amap';
+import {loadEditorAmap,type EditorAmap,type MouseTool,type SearchPoi} from '../utils/amap-editor';
+import type {AMapInstance,AMapMarker,MapShape} from '../utils/amap';
 import type {PointFence} from '../mock/operations';
 const props=defineProps<{position:[number,number];fence?:PointFence}>();
 const emit=defineEmits<{pick:[position:[number,number]];fence:[value:PointFence|undefined];address:[value:string]}>();

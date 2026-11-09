@@ -1,6 +1,7 @@
 import { createSanitation, ruleKinds } from "./sanitation.ts";
 import type { SanitationData } from "./sanitation.ts";
 import type { DemoState, Merchant, Task } from "./types.ts";
+import { demoPointFence } from "./point-location.ts";
 export interface Vehicle {
   id: string;
   plate: string;
@@ -20,7 +21,7 @@ export type PointFence = {type:'circle';center:[number,number];radius:number} | 
 export interface Point {
   organizationId?: string;
   note?: string;
-  fence?: PointFence;
+  fence?: PointFence | null;
   longitude?: number;
   latitude?: number;
   id: string;
@@ -120,7 +121,7 @@ export function createOperations(
     x: 12 + (i % 6) * 14,
     y: 20 + Math.floor(i / 6) * 19,
   }));
-  const points = merchants.map((m, i) => ({
+  const points: Point[] = merchants.map((m, i) => ({
     id: `PT${i + 1}`,
     merchantId: m.id,
     name: `${m.name}收集点`,
@@ -130,6 +131,7 @@ export function createOperations(
     x: 10 + (i % 7) * 12,
     y: 17 + Math.floor(i / 7) * 20,
   }));
+  for (const point of points) point.fence = demoPointFence(point);
   const history: RecordRow[] = [];
   for (let d = 365; d > 0; d--)
     for (let i = 0; i < 24; i++) {

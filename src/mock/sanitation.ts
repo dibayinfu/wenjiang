@@ -1,6 +1,7 @@
 import { mockRfid, validRfid, UNRECOGNIZED_RFID } from "./rfid.ts";
 import type { DemoState, Merchant, Task } from "./types.ts";
 import type { Point, RoutePlan, RecordRow } from "./operations.ts";
+import { mockCollectionPosition, randomPointLocation, WENJIANG_CENTER } from "./point-location.ts";
 export interface Bin {
   id: string;
   name: string;
@@ -54,6 +55,7 @@ export interface Weighing {
   pointId: string;
   rfid: string;
   kg: number;
+  gps?: [number, number];
   status: string;
   reason: string;
 }
@@ -128,6 +130,7 @@ export function createSanitation(
         pointId: points[0]!.id,
         rfid: bins[0]!.rfid,
         kg: -6,
+        gps: mockCollectionPosition(randomPointLocation(points[1]!.id), 0),
         status: "待核验",
         reason: "称重异常：原始净重为负，未计入有效收运量",
       },
@@ -141,6 +144,7 @@ export function createSanitation(
         pointId: "",
         rfid: UNRECOGNIZED_RFID,
         kg: 42,
+        gps: mockCollectionPosition(WENJIANG_CENTER, 1),
         status: "待核验",
         reason: "未识别到RFID，未计入有效收运量",
       },
@@ -261,6 +265,8 @@ export function weighingRows(
     const count = row.buckets;
     const cents = Math.round(row.kg * 100);
     const base = count ? Math.floor(cents / count) : 0;
+    const origin = randomPointLocation(row.pointId);
+    const pointIndex = Math.max(0, state.points.findIndex(p => p.id === row.pointId));
 
     for (let i = 0; i < count; i++)
       result.push({
@@ -271,8 +277,9 @@ export function weighingRows(
         vehicle: row.vehicle,
         merchantId: row.merchantId,
         pointId: row.pointId,
-        rfid: row.rfids?.[i] ?? mockRfid(Math.max(0, state.points.findIndex(p => p.id === row.pointId)), i % (2 + (Math.max(0, state.points.findIndex(p => p.id === row.pointId)) % 3))),
+        rfid: row.rfids?.[i] ?? mockRfid(pointIndex, i % (2 + (pointIndex % 3))),
         kg: (base + (i < cents % count ? 1 : 0)) / 100,
+        gps: mockCollectionPosition(origin, i),
         status: "有效",
         reason: "",
       });

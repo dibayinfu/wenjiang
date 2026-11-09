@@ -1,6 +1,7 @@
 import {migrateMerchantStreet} from "./merchant-dictionaries";
 import { migrateRfid } from "./rfid";
 import { createWeighbridge } from "./weighbridge";
+import { demoPointFence } from "./point-location";
 import { computed, reactive, ref, watch } from "vue";
 import { chinaDate, createSeed, isDemoState, summarize } from "./model";
 import type { DemoState } from "./types";
@@ -29,6 +30,12 @@ function restore(): DemoState {
         cleaned.bins = cleaned.bins.map(bin => ({...bin, rfid: migrateRfid(bin.rfid)}));
         cleaned.tasks = cleaned.tasks.map(task => ({...task, rfids: task.rfids.map(migrateRfid)}));
         cleaned.weighExceptions = cleaned.weighExceptions.map(row => ({...row, rfid: migrateRfid(row.rfid)}));
+        for (const point of cleaned.points) {
+          // 旧种子点补齐围栏。null 表示已在编辑器中明确清除。
+          if (point.fence === undefined && /^(?:PT\d+|PT-MAP-\d+)$/.test(point.id)) {
+            point.fence = demoPointFence(point);
+          }
+        }
         cleaned.merchants = parsed.merchants.map((merchant) => {
           const { frequency: _frequency, ...current } =
             merchant as typeof merchant & { frequency?: unknown };

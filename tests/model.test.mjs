@@ -526,6 +526,34 @@ test("收集点完整编辑表单与围栏保存独立快照，非法输入不�
  assert.deepEqual(original.fence,polygon);
  polygon.path[0][0]=0;assert.equal(original.fence.path[0][0],103.83);
  assert.ok(isDemoState(state,date));
+ saveMerchantPoint(state,{...original,fence:undefined});
+ assert.equal(JSON.parse(JSON.stringify(original)).fence,null);
+});
+
+test("逐桶 GPS 与绑定独立，圆形和多边形可同时命中并计入边界", async () => {
+ const {weighingRows} = await import('../src/mock/sanitation.ts');
+ const {fenceContains} = await import('../src/utils/point-fence.ts');
+ const {saveMerchantPoint} = await import('../src/mock/merchant-points.ts');
+ const state = createSeed(date);
+ const row = state.history.find(row => row.date === shiftDate(date,-1));
+ const [inside, outside] = weighingRows(state,[row],false);
+ const point = state.points.find(point => point.id === row.pointId);
+ assert.equal(fenceContains(point.fence,inside.gps),true);
+ assert.equal(fenceContains(point.fence,outside.gps),false);
+
+ const [lng,lat] = inside.gps;
+ const polygon = {type:'polygon',path:[[lng,lat],[lng+.0002,lat],[lng+.0002,lat+.0002],[lng,lat+.0002],[lng,lat]]};
+ assert.equal(fenceContains(polygon,inside.gps),true);
+ assert.equal(fenceContains(polygon,[lng+.0001,lat+.0001]),true);
+ assert.equal(fenceContains(polygon,[lng-.0001,lat]),false);
+ const other = state.points[1];
+ saveMerchantPoint(state,{...other,fence:polygon});
+ state.collectionPointBindings = {[inside.id]:other.id};
+ const [rebound] = weighingRows(state,[row],false);
+ assert.deepEqual(rebound.gps,inside.gps);
+ assert.equal(rebound.merchantId,inside.merchantId);
+ assert.equal(rebound.pointId,other.id);
+ assert.deepEqual(state.points.filter(p => p.fence && fenceContains(p.fence,rebound.gps)).map(p => p.id),[point.id,other.id]);
 });
 
 
