@@ -13,10 +13,11 @@ export interface MapShape {
   getRadius?():number;
   getPath?():LngLat[];
 }
+export interface AMapCircle extends MapShape { setRadius(radius: number): void }
 interface AMapLabelMarker { getPosition(): LngLat }
 interface AMapLabelsLayer { add(markers: AMapLabelMarker[]): void }
 export interface AMapInstance {
-  add(layer: AMapLabelsLayer): void;
+  add(layer: AMapLabelsLayer | MapShape): void;
   destroy(): void;
   resize(): void;
   setMapStyle(style: string): void;
@@ -35,8 +36,9 @@ export interface AMapNamespace {
   plugin?(names:string[],callback:()=>void):void;
   Map: new (container: HTMLElement, options: Record<string, unknown>) => AMapInstance;
   Marker: new (options: Record<string, unknown>) => AMapMarker;
-  Circle: new (options: Record<string, unknown>) => MapShape;
+  Circle: new (options: Record<string, unknown>) => AMapCircle;
   Polygon: new (options: Record<string, unknown>) => MapShape;
+  Polyline: new (options: Record<string, unknown>) => MapShape;
   LabelMarker: new (options: Record<string, unknown>) => AMapLabelMarker;
   LabelsLayer: new (options: Record<string, unknown>) => AMapLabelsLayer;
   Pixel: new (x: number, y: number) => unknown;
