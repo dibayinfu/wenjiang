@@ -6,6 +6,7 @@ import {
   IconBarChart,
   IconStorage,
   IconSettings,
+  IconTool,
 } from "@arco-design/web-vue/es/icon";
 import { reportPages } from "../../mock/report-pages";
 import { useAppStore } from "../../stores/app";
@@ -14,11 +15,14 @@ const emit = defineEmits<{ navigate: [] }>();
 const route = useRoute();
 const router = useRouter();
 const app = useAppStore();
-const openKeys = ref<string[]>(["reports", "merchantAssets", "business"]);
+const openKeys = ref<string[]>(["reports", "merchantAssets", "business", "tools"]);
 watch(
   () => route.path,
   (path) => {
-    const group = path === "/merchants" || path.startsWith("/assets/") ? "merchantAssets" : path.startsWith("/settings/") ? "business" : "reports";
+    let group = "reports";
+    if (path === "/merchants" || path.startsWith("/assets/")) group = "merchantAssets";
+    else if (path.startsWith("/settings/")) group = "business";
+    else if (path.startsWith("/tools/")) group = "tools";
     openKeys.value = app.menuAccordion
       ? [group]
       : [...new Set([...openKeys.value, group, ...(path.startsWith("/reports/") ? ["reports"] : [])])];
@@ -43,6 +47,10 @@ function navigate(path: string) {
     <a-sub-menu key="reports" title="作业监管"><template #icon><IconBarChart /></template><a-menu-item v-for="page in reportPages" :key="page.path"><span :style="page.upgrade ? {color:'rgb(var(--danger-6))'} : undefined">{{page.title}}</span></a-menu-item></a-sub-menu>
     <a-sub-menu key="merchantAssets" title="商户资产"><template #icon><IconStorage /></template><a-menu-item key="/merchants">商户管理</a-menu-item><a-menu-item key="/assets/points">商户收集点</a-menu-item></a-sub-menu>
     <a-sub-menu key="business" title="业务设置"><template #icon><IconSettings /></template><a-menu-item key="/settings/units"><span style="color:rgb(var(--danger-6))">联单设置 · 新增</span></a-menu-item><a-menu-item key="/settings/weighbridge"><span style="color:rgb(var(--danger-6))">地磅设置 · 新增</span></a-menu-item></a-sub-menu>
+    <a-sub-menu key="tools" title="临时工具">
+      <template #icon><IconTool /></template>
+      <a-menu-item key="/tools/collection-coordinates">收运核查地图</a-menu-item>
+    </a-sub-menu>
   </a-menu>
 </template>
 <style scoped>

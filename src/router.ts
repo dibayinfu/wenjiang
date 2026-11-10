@@ -26,6 +26,12 @@ export const router = createRouter({
         { path: "settings/weighbridge", name: "WenjiangWeighbridgeSettings", component: () => import("./views/WeighbridgeSettings.vue"), meta: {title:"地磅设置",group:"业务设置"} },
         { path: "settings/units", name: "WenjiangManifests", component: () => import("./views/Manifests.vue"), meta: {title:"联单设置",group:"业务设置"} },
         {
+          path: "tools/collection-coordinates",
+          name: "WenjiangCollectionCoordinates",
+          component: () => import("./views/CollectionCoordinates.vue"),
+          meta: { title: "收运核查地图", group: "临时工具" },
+        },
+        {
           path: "reports",
           redirect: to => {
             const { view, ...query } = to.query;
