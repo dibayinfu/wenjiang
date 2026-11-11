@@ -14,6 +14,9 @@ export interface MapShape {
   getRadius?():number;
   getPath?():LngLat[];
 }
+export interface AMapPolyline extends MapShape {
+  setPath(path: [number, number][]): void;
+}
 export interface AMapCircle extends MapShape {
   setRadius(radius: number): void;
   setOptions(options: Record<string, unknown>): void;
@@ -48,7 +51,7 @@ export interface AMapNamespace {
   Marker: new (options: Record<string, unknown>) => AMapMarker;
   Circle: new (options: Record<string, unknown>) => AMapCircle;
   Polygon: new (options: Record<string, unknown>) => MapShape;
-  Polyline: new (options: Record<string, unknown>) => MapShape;
+  Polyline: new (options: Record<string, unknown>) => AMapPolyline;
   LabelMarker: new (options: Record<string, unknown>) => AMapLabelMarker;
   LabelsLayer: new (options: Record<string, unknown>) => AMapLabelsLayer;
   Pixel: new (x: number, y: number) => unknown;

@@ -4,8 +4,10 @@ import { AutoComplete, Checkbox, Popover } from '@arco-design/web-vue';
 import { IconClose, IconLeft, IconRight, IconSettings, IconUpload } from '@arco-design/web-vue/es/icon';
 import PageHeader from '../components/PageHeader.vue';
 import RoutePlayback from '../components/RoutePlayback.vue';
-import { routeFrame, type RouteFrame } from '../utils/route-playback';
-import { loadAmapJsApi, type AMapCircle, type AMapInstance } from '../utils/amap';
+import { routeFrame, routeProgressPath, type RouteFrame } from '../utils/route-playback';
+import { createCollectionMap, type MapCircle, type CollectionMap, type MapProvider } from '../utils/collection-map';
+import { mapThemeOptions, readMapThemes, saveMapThemes, type MapTheme } from '../utils/map-themes';
+import { gcj02ToBd09 } from '../utils/collection-coordinates';
 import { collectionHistoryDates, loadCollectionHistory, type CollectionBatches } from '../utils/collection-history';
 import { parseCollectionImport, parseFenceImport, parseRouteImport, type CollectionImportPoint } from '../utils/collection-import';
 import { collectionMerchantNames, unmatchedCollectionCounts } from '../utils/collection-matching';
@@ -55,6 +57,24 @@ const dateError = ref('');
 const mapLoading = ref(false);
 const mapError = ref('');
 const retry = ref(0);
+const mapProvider = ref<MapProvider>('baidu');
+const themePreferences = ref(readMapThemes());
+const themeLoading = ref(false);
+const themeError = ref('');
+let themeRequest = 0;
+const currentTheme = computed({
+  get: () => themePreferences.value[mapProvider.value],
+  set(value) {
+    themePreferences.value[mapProvider.value] = value;
+    saveMapThemes(themePreferences.value);
+    void applyMapTheme(value);
+  },
+});
+const mapProviderName = computed(() => mapProvider.value === 'baidu' ? '百度地图' : '高德地图');
+const coordinateSystem = computed(() => mapProvider.value === 'baidu' ? 'BD-09' : 'GCJ-02');
+function displayPosition(position: [number, number]) {
+  return (mapProvider.value === 'baidu' ? gcj02ToBd09(position) : position).map(value => value.toFixed(6)).join('，');
+}
 const radius = ref(50);
 const showNames = ref(false);
 const highlightUnmatched = ref(false);
@@ -78,14 +98,31 @@ const layerSummaries = computed(() => [
     hint: `共 ${fenceBatch.value.total - fenceBatch.value.skipped} 个收集点，点击绿色围栏查看详情。`,
   },
   routeBatch.value && {
-    kind: 'route', color: 'purple', fileName: routeBatch.value.fileName,
+    kind: 'route', color: 'cyan', fileName: routeBatch.value.fileName,
     label: `路线 ${routeBatch.value.total}点`,
     skipped: routeBatch.value.skipped,
-    hint: '紫色折线为车辆路线，箭头表示行进方向。',
+    hint: '浅青蓝为未回放轨迹，深青蓝为已回放轨迹；箭头表示行进方向。',
   },
 ].filter(layer => layer !== undefined));
-let circles: AMapCircle[] = [];
-let activeMap: AMapInstance | undefined;
+let circles: MapCircle[] = [];
+let activeMap: CollectionMap | undefined;
+async function applyMapTheme(value: MapTheme) {
+  const map = activeMap;
+  if (!map) return;
+  const request = ++themeRequest;
+  const provider = mapProvider.value;
+  themeLoading.value = true;
+  themeError.value = '';
+  try { await map.setTheme(value); }
+  catch (error) {
+    if (request !== themeRequest || map !== activeMap) return;
+    themePreferences.value[provider] = 'normal';
+    saveMapThemes(themePreferences.value);
+    themeError.value = error instanceof Error ? error.message : '主题加载失败，请重试。';
+  } finally {
+    if (request === themeRequest) themeLoading.value = false;
+  }
+}
 const recordFields = [
   ['所属商户', 'merchantName'],
   ['收集点', 'collectionPoint'],
@@ -111,7 +148,7 @@ function locateSearchResult(index: number) {
     const index = result.point.rows.findIndex(row => row.merchantName.trim().toLowerCase() === merchantKeyword.value.trim().toLowerCase());
     selectedFenceRowIndex.value = Math.max(0, index);
   }
-  activeMap?.setZoomAndCenter(Math.max(activeMap.getZoom(), 17), result.point.position);
+  activeMap?.locate(Math.max(activeMap.getZoom(), 17), result.point.position);
 }
 
 async function selectSearch(mode: CollectionSearchMode, value: string) {
@@ -175,7 +212,7 @@ watch(radius, value => {
   for (const circle of circles) circle.setRadius(value);
 });
 
-watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, importedRoute], _, onCleanup) => {
+watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, importedFences, importedRoute], _, onCleanup) => {
   clearSearch();
   rfidKeyword.value = '';
   merchantKeyword.value = '';
@@ -196,16 +233,14 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
   });
 
   try {
-    const amap = await loadAmapJsApi();
-    if (cancelled) return;
-
-    const map = new amap.Map(element, {
-      center,
-      zoom: 17,
-      viewMode: '2D',
-      mapStyle: 'amap://styles/whitesmoke',
-    });
+    // 独立容器隔离快速切换时尚未完成的 SDK 加载。
+    const canvas = document.createElement('div');
+    canvas.style.cssText = 'position:absolute;inset:0';
+    element.replaceChildren(canvas);
+    const map = await createCollectionMap(mapProvider.value, canvas, center, currentTheme.value);
+    if (cancelled) { map.destroy(); canvas.remove(); return; }
     activeMap = map;
+    void applyMapTheme(currentTheme.value);
     let observer: ResizeObserver | undefined;
     const stopEffects: (() => void)[] = [];
     disposeMap = () => {
@@ -213,21 +248,12 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
       observer?.disconnect();
       circles = [];
       activeMap = undefined;
+      themeRequest++;
+      themeLoading.value = false;
+      themeError.value = '';
       map.destroy();
     };
-    if (importedRoute) {
-      map.add(new amap.Polyline({
-        path: importedRoute.path,
-        strokeColor: '#722ed1',
-        strokeOpacity: 0.9,
-        strokeWeight: 5,
-        lineJoin: 'round',
-        lineCap: 'round',
-        showDir: true,
-        bubble: true,
-        zIndex: 8,
-      }));
-    }
+    const routeLine = importedRoute ? map.route(importedRoute.path) : undefined;
     if (importedRoute?.samples.length) {
       const vehicle = document.createElement('div');
       vehicle.className = 'playback-position';
@@ -235,11 +261,22 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
       const arrow = document.createElement('i');
       arrow.className = 'playback-direction';
       vehicle.append(arrow);
-      const marker = new amap.Marker({ position: importedRoute.samples[0]!.position, content: vehicle, offset: new amap.Pixel(-17, -17), zIndex: 200, bubble: true });
-      marker.setMap(map);
+      const marker = map.marker(importedRoute.samples[0]!.position, vehicle, [-17, -17], undefined, 200);
+      let progressTimer: number | undefined;
+      let lastProgressAt = -Infinity;
+      let pendingFrame: RouteFrame;
+      const drawProgress = () => {
+        progressTimer = undefined;
+        lastProgressAt = performance.now();
+        routeLine?.setProgress(routeProgressPath(importedRoute.samples, pendingFrame));
+      };
+      stopEffects.push(() => window.clearTimeout(progressTimer));
       stopEffects.push(watch(playbackFrame, value => {
         const frame = value ?? routeFrame(importedRoute.samples, importedRoute.samples[0]!.timestamp);
         marker.setPosition(frame.position);
+        // 位置保持逐帧更新；折线最多每 100ms 更新一次，并补绘最后一帧。
+        pendingFrame = frame;
+        if (progressTimer === undefined) progressTimer = window.setTimeout(drawProgress, Math.max(0, 100 - (performance.now() - lastProgressAt)));
         arrow.style.transform = `rotate(${frame.heading}deg)`;
       }, { immediate: true }));
     }
@@ -248,16 +285,9 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
       fillColor: '#23a650', fillOpacity: 0.2, zIndex: 10,
     };
     for (const point of fencePoints) {
-      const circle = new amap.Circle({
-        ...fenceStyle,
-        center: point.position,
-        radius: radius.value,
-        cursor: 'pointer',
-      });
-      circle.on('click', () => {
+      const circle = map.circle(point.position, radius.value, fenceStyle, () => {
         selectedDetail.value = { kind: 'fences', point };
       });
-      circle.setMap(map);
       circles.push(circle);
     }
     const recordPins = new Map<CollectionImportPoint, HTMLElement>();
@@ -268,19 +298,12 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
       pin.className = 'collection-record-pin';
       content.append(pin);
       recordPins.set(point, content);
-      const marker = new amap.Marker({
-        position: point.position,
-        title: `${point.rows[0]!.merchantName} · ${point.rows.length} 条记录`,
-        content,
-        offset: new amap.Pixel(-14, -33),
-      });
-      marker.on('click', () => {
+      map.marker(point.position, content, [-14, -33], () => {
         selectedDetail.value = { kind: 'records', point };
       });
-      marker.setMap(map);
     }
 
-    let selectedCircle: AMapCircle | undefined;
+    let selectedCircle: MapCircle | undefined;
     let selectedPin: HTMLElement | undefined;
     stopEffects.push(watch(selectedDetail, detail => {
       selectedCircle?.setOptions(fenceStyle);
@@ -309,34 +332,16 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
 
     stopEffects.push(watch([showNames, matchCounts], ([visible], _, onCleanup) => {
       if (!visible) return;
-      const layer = new amap.LabelsLayer({ collision: false, allowCollision: false, zIndex: 120 });
-      onCleanup(() => layer.setMap(null));
-      const labels = fencePoints.map(point => {
-        const label = new amap.LabelMarker({
-          position: point.position,
-          text: {
-            content: collectionMerchantNames(point.rows).join('、') || '未填写所属商户',
-            direction: 'bottom', offset: [0, 8],
-            style: { fontSize: 12, fillColor: '#00852e', strokeColor: '#fff', strokeWidth: 3 },
-          },
-        });
-        label.on('click', () => { selectedDetail.value = { kind: 'fences', point }; });
-        return label;
-      });
-      labels.push(...recordPoints.map(point => {
-        const label = new amap.LabelMarker({
-          position: point.position,
-          text: {
-            content: collectionMerchantNames(point.rows).join('、') || '未填写所属商户',
-            direction: 'top', offset: [0, -38],
-            style: { fontSize: 12, fillColor: matchCounts.value.get(point) ? '#d03050' : '#165dff', strokeColor: '#fff', strokeWidth: 3 },
-          },
-        });
-        label.on('click', () => { selectedDetail.value = { kind: 'records', point }; });
-        return label;
-      }));
-      layer.add(labels);
-      map.add(layer);
+      const items = [
+        ...fencePoints.map(point => ({ position: point.position,
+          text: collectionMerchantNames(point.rows).join('、') || '未填写所属商户', color: '#00852e',
+          offset: [0, 8] as [number, number], click: () => { selectedDetail.value = { kind: 'fences', point }; } })),
+        ...recordPoints.map(point => ({ position: point.position,
+          text: collectionMerchantNames(point.rows).join('、') || '未填写所属商户',
+          color: matchCounts.value.get(point) ? '#d03050' : '#165dff', offset: [0, -38] as [number, number],
+          click: () => { selectedDetail.value = { kind: 'records', point }; } })),
+      ];
+      onCleanup(map.labels(items));
     }, { immediate: true }));
 
     let fitted = recordPoints.length === 1 && !fencePoints.length && !importedRoute;
@@ -346,7 +351,7 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
       map.resize();
       if (!fitted) {
         fitted = true;
-        map.setFitView(undefined, true, [40, 40, 40, 40]);
+        map.fit();
       }
     });
     observer.observe(element);
@@ -355,7 +360,7 @@ watch([batch, fenceBatch, routeBatch, retry], async ([imported, importedFences, 
     if (cancelled) return;
     disposeMap?.();
     disposeMap = undefined;
-    mapError.value = cause instanceof Error ? cause.message : '高德地图加载失败。';
+    mapError.value = cause instanceof Error ? cause.message : `${mapProviderName.value}加载失败。`;
   } finally {
     if (!cancelled) mapLoading.value = false;
   }
@@ -366,7 +371,7 @@ onDeactivated(() => { selectedDetail.value = undefined; });
 
 <template>
   <div class="gi_page page-content audit-map-page">
-    <PageHeader title="收运核查地图" class="map-page-header">
+    <PageHeader title="核验地图" class="map-page-header">
       <div class="map-search-controls">
         <AutoComplete v-model="merchantKeyword" class="map-search-input" :data="merchantSuggestions" :filter-option="false" placeholder="输入商户名称搜索"
           aria-label="商户名称搜索" allow-clear :disabled="dateLoading || mapLoading" @select="(value: string) => selectSearch('merchant', value)" />
@@ -382,50 +387,68 @@ onDeactivated(() => { selectedDetail.value = undefined; });
         </div>
         <span v-else-if="noSuggestions" class="search-results" role="status">无匹配结果</span>
       </div>
-      <div class="map-date-controls">
-        <template v-if="collectionHistoryDates.length">
-          <span class="date-label">数据日期</span>
-          <a-select v-model="selectedDate" :options="dateOptions" :disabled="!!reading"
-            placeholder="导入模式" aria-label="收运数据日期" style="width: 150px" />
-        </template>
-        <input ref="recordsInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'records')" />
-        <input ref="fencesInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'fences')" />
-        <input ref="routeInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'route')" />
-        <Popover trigger="click" position="br">
-          <a-button aria-label="导入设置"><template #icon><IconSettings /></template></a-button>
-          <template #content>
-            <div class="import-settings">
-              <strong>数据导入</strong>
-              <div class="import-setting-row">
-                <div><span>收运明细</span><small>WGS-84 · data.list · lng / lat</small></div>
-                <a-space :size="4">
-                  <a-button size="small" :loading="reading === 'records'" :disabled="!!reading && reading !== 'records'" @click="recordsInput?.click()">
-                    <template #icon><IconUpload /></template>导入收运明细
-                  </a-button>
-                  <a :href="recordsSample" download="收运明细样例.json" aria-label="下载收运明细样例">格式样例</a>
-                </a-space>
-              </div>
-              <div class="import-setting-row">
-                <div><span>商户收集点</span><small>BD-09 · data.list · name / lng / lat</small></div>
-                <a-space :size="4">
-                  <a-button size="small" :loading="reading === 'fences'" :disabled="!!reading && reading !== 'fences'" @click="fencesInput?.click()">
-                    <template #icon><IconUpload /></template>导入商户收集点
-                  </a-button>
-                  <a :href="fencesSample" download="商户收集点样例.json" aria-label="下载商户收集点样例">格式样例</a>
-                </a-space>
-              </div>
-              <div class="import-setting-row">
-                <div><span>车辆路线</span><small>WGS-84 · data.positions · longitude / latitude</small></div>
-                <a-space :size="4">
-                  <a-button size="small" :loading="reading === 'route'" :disabled="!!reading && reading !== 'route'" @click="routeInput?.click()">
-                    <template #icon><IconUpload /></template>导入路线
-                  </a-button>
-                  <a :href="routeSample" download="路线样例.json" aria-label="下载路线样例">格式样例</a>
-                </a-space>
-              </div>
-            </div>
+      <div class="map-data-controls">
+        <div class="map-date-controls">
+          <template v-if="collectionHistoryDates.length">
+            <span class="date-label">数据日期</span>
+            <a-select v-model="selectedDate" :options="dateOptions" :disabled="!!reading"
+              placeholder="导入模式" aria-label="收运数据日期" style="width: 150px" />
           </template>
-        </Popover>
+          <input ref="recordsInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'records')" />
+          <input ref="fencesInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'fences')" />
+          <input ref="routeInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'route')" />
+          <Popover trigger="click" position="br">
+            <a-button aria-label="导入设置"><template #icon><IconSettings /></template></a-button>
+            <template #content>
+              <div class="import-settings">
+                <strong>数据导入</strong>
+                <div class="import-setting-row">
+                  <div><span>收运明细</span><small>WGS-84 · data.list · lng / lat</small></div>
+                  <a-space :size="4">
+                    <a-button size="small" :loading="reading === 'records'" :disabled="!!reading && reading !== 'records'" @click="recordsInput?.click()">
+                      <template #icon><IconUpload /></template>导入收运明细
+                    </a-button>
+                    <a :href="recordsSample" download="收运明细样例.json" aria-label="下载收运明细样例">格式样例</a>
+                  </a-space>
+                </div>
+                <div class="import-setting-row">
+                  <div><span>商户收集点</span><small>BD-09 · data.list · name / lng / lat</small></div>
+                  <a-space :size="4">
+                    <a-button size="small" :loading="reading === 'fences'" :disabled="!!reading && reading !== 'fences'" @click="fencesInput?.click()">
+                      <template #icon><IconUpload /></template>导入商户收集点
+                    </a-button>
+                    <a :href="fencesSample" download="商户收集点样例.json" aria-label="下载商户收集点样例">格式样例</a>
+                  </a-space>
+                </div>
+                <div class="import-setting-row">
+                  <div><span>车辆路线</span><small>WGS-84 · data.positions · longitude / latitude</small></div>
+                  <a-space :size="4">
+                    <a-button size="small" :loading="reading === 'route'" :disabled="!!reading && reading !== 'route'" @click="routeInput?.click()">
+                      <template #icon><IconUpload /></template>导入路线
+                    </a-button>
+                    <a :href="routeSample" download="路线样例.json" aria-label="下载路线样例">格式样例</a>
+                  </a-space>
+                </div>
+              </div>
+            </template>
+          </Popover>
+        </div>
+        <div v-if="layerSummaries.length" class="layer-summaries" aria-label="当前日期数据统计" aria-live="polite">
+          <Popover v-for="layer in layerSummaries" :key="layer.kind" :trigger="['hover', 'click']" position="bl">
+            <button type="button" class="layer-summary" :aria-label="`${layer.label}，查看导入信息`">
+              <a-tag size="small" :color="layer.skipped ? 'orange' : layer.color">
+                {{ layer.label }}<template v-if="layer.skipped"> · 跳过 {{ layer.skipped }}</template>
+              </a-tag>
+            </button>
+            <template #content>
+              <div class="layer-details">
+                <strong>{{ layer.fileName }}</strong>
+                <div>{{ layer.hint }}</div>
+                <div v-if="layer.skipped">已跳过 {{ layer.skipped }} 条无效数据。</div>
+              </div>
+            </template>
+          </Popover>
+        </div>
       </div>
     </PageHeader>
     <a-alert v-if="importError || dateError" type="error">{{ importError || dateError }}</a-alert>
@@ -433,39 +456,36 @@ onDeactivated(() => { selectedDetail.value = undefined; });
     <section class="panel map-panel" aria-label="收运坐标地图">
       <a-empty v-if="dateLoading" description="正在读取该日期的收运数据…" />
       <a-empty v-else-if="dateError" description="该日期数据暂时无法显示。" />
-      <a-empty v-else-if="!layerSummaries.length" description="请选择收运明细、商户收集点或路线 JSON 文件，在高德地图上查看。" />
+      <a-empty v-else-if="!layerSummaries.length" description="请选择收运明细、商户收集点或路线 JSON 文件，在地图上查看。" />
       <a-empty v-else-if="!hasOverlays" description="导入的文件中没有可显示的坐标。" />
       <template v-else>
         <div class="map-frame" :class="{ 'has-playback': !!routeBatch }">
-          <div ref="mapElement" class="coordinate-map" role="region" aria-label="收运明细高德地图" />
+          <div ref="mapElement" class="coordinate-map" role="region" :aria-label="`收运明细${mapProviderName}`" />
           <div ref="mapToolbar" class="import-toolbar">
-            <div class="layer-summaries" aria-live="polite">
-              <Popover v-for="layer in layerSummaries" :key="layer.kind" :trigger="['hover', 'click']" position="bl">
-                <button type="button" class="layer-summary" :aria-label="`${layer.label}，查看导入信息`">
-                  <a-tag size="small" :color="layer.skipped ? 'orange' : layer.color">
-                    {{ layer.label }}<template v-if="layer.skipped"> · 跳过 {{ layer.skipped }}</template>
-                  </a-tag>
-                </button>
-                <template #content>
-                  <div class="layer-details">
-                    <strong>{{ layer.fileName }}</strong>
-                    <div>{{ layer.hint }}</div>
-                    <div v-if="layer.skipped">已跳过 {{ layer.skipped }} 条无效数据。</div>
-                  </div>
-                </template>
-              </Popover>
-            </div>
-            <div v-if="batch?.points.length || fenceBatch?.points.length" class="radius-control">
-              <template v-if="fenceBatch?.points.length">
-                <span id="fence-radius-label">围栏半径</span>
-                <a-radio-group v-model="radius" type="button" size="small" aria-labelledby="fence-radius-label">
-                  <a-radio v-for="meters in [30, 50, 100]" :key="meters" :value="meters">{{ meters }} 米</a-radio>
-                </a-radio-group>
-              </template>
+            <div class="map-settings-control">
               <Popover trigger="click" position="br">
                 <a-button size="small" aria-label="地图显示设置"><template #icon><IconSettings /></template></a-button>
                 <template #content>
                   <div class="map-display-settings">
+                    <div class="map-setting-field">
+                      <span>地图切换</span>
+                      <a-radio-group v-model="mapProvider" type="button" size="small" aria-label="地图切换">
+                        <a-radio value="baidu">百度地图</a-radio>
+                        <a-radio value="amap">高德地图</a-radio>
+                      </a-radio-group>
+                    </div>
+                    <div class="map-setting-field">
+                      <span>地图主题</span>
+                      <a-select v-model="currentTheme" :options="mapThemeOptions[mapProvider]" :disabled="mapLoading || !!mapError" :loading="themeLoading"
+                        size="small" aria-label="地图主题" />
+                    </div>
+                    <span v-if="themeError" class="theme-error" role="status">{{ themeError }}</span>
+                    <div v-if="fenceBatch?.points.length" class="map-setting-field">
+                      <span id="fence-radius-label">围栏半径</span>
+                      <a-radio-group v-model="radius" type="button" size="mini" aria-labelledby="fence-radius-label">
+                        <a-radio v-for="meters in [10, 20, 30, 50, 100]" :key="meters" :value="meters">{{ meters }} 米</a-radio>
+                      </a-radio-group>
+                    </div>
                     <Checkbox v-model="showNames">显示名称</Checkbox>
                     <Checkbox v-model="highlightUnmatched" :disabled="!canMatch">高亮未匹配收运点坐标</Checkbox>
                     <small>{{ canMatch ? '收运坐标位于同名商户的围栏内，才算匹配。' : '导入收运明细和收集点后可核对匹配情况。' }}</small>
@@ -494,8 +514,8 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                   <a-descriptions-item label="所属商户">{{ selectedFenceRow.merchantName }}</a-descriptions-item>
                   <a-descriptions-item label="地址">{{ selectedFenceRow.address }}</a-descriptions-item>
                   <a-descriptions-item label="坐标">
-                    <a-tooltip :content="`高德 GCJ-02（经度，纬度）；原始 BD-09 为 ${selectedDetail.point.sourcePosition.join('，')}`">
-                      <span>{{ selectedDetail.point.position.map(value => value.toFixed(6)).join('，') }}</span>
+                    <a-tooltip :content="`${mapProviderName} ${coordinateSystem}（经度，纬度）；原始 BD-09 为 ${selectedDetail.point.sourcePosition.join('，')}`">
+                      <span>{{ displayPosition(selectedDetail.point.position) }}</span>
                     </a-tooltip>
                   </a-descriptions-item>
                   <a-descriptions-item label="更新时间">{{ selectedFenceRow.updateTime }}</a-descriptions-item>
@@ -504,20 +524,19 @@ onDeactivated(() => { selectedDetail.value = undefined; });
               <template v-else>
                 <a-descriptions v-for="row in selectedDetail.point.rows" :key="row.id" class="point-fields" :column="1" size="small" layout="vertical">
                   <a-descriptions-item v-for="[label, field] in recordFields" :key="field" :label="label">{{ row[field] }}</a-descriptions-item>
-                  <a-descriptions-item label="坐标（GCJ-02）">{{ selectedDetail.point.position.map(value => value.toFixed(6)).join('，') }}</a-descriptions-item>
+                  <a-descriptions-item :label="`坐标（${coordinateSystem}）`">{{ displayPosition(selectedDetail.point.position) }}</a-descriptions-item>
                 </a-descriptions>
               </template>
             </div>
           </aside>
           <div v-if="mapLoading || mapError" class="map-feedback" role="status">
             <a-spin v-if="mapLoading" />
-            <span>{{ mapError || '高德地图加载中' }}</span>
+            <span>{{ mapError || `${mapProviderName}加载中` }}</span>
             <a-button v-if="mapError" size="small" @click="retry++">重试</a-button>
           </div>
         </div>
       </template>
     </section>
-
   </div>
 </template>
 
@@ -526,7 +545,8 @@ onDeactivated(() => { selectedDetail.value = undefined; });
 .map-page-header :deep(.module-header-actions > .arco-space-item:first-child) { flex: 1; min-width: 0; }
 .map-search-controls, .map-date-controls { display: flex; align-items: center; gap: 8px; }
 .map-search-controls { flex-wrap: wrap; width: 100%; }
-.map-date-controls { margin-inline-start: auto; }
+.map-data-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
+.map-date-controls { flex-wrap: wrap; justify-content: flex-end; }
 .date-label { font-size: 12px; color: var(--color-text-2); white-space: nowrap; }
 .map-search-controls :deep(.map-search-input) { flex: 0 1 260px; width: 260px; max-width: 100%; }
 .search-results { display: flex; align-items: center; gap: 4px; color: var(--color-text-2); font-size: 12px; white-space: nowrap; }
@@ -536,15 +556,16 @@ onDeactivated(() => { selectedDetail.value = undefined; });
 .import-setting-row > div:first-child { flex: 1 1 100%; }
 .import-setting-row small { display: block; color: var(--color-text-3); overflow-wrap: anywhere; }
 .import-setting-row a { color: rgb(var(--primary-6)); white-space: nowrap; }
-.import-toolbar, .layer-summaries, .radius-control {
+.import-toolbar, .layer-summaries, .map-settings-control {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 8px;
 }
 .import-toolbar { position: absolute; z-index: 13; top: 12px; left: 12px; right: 12px; }
-.layer-summaries, .radius-control { padding: 4px 6px; background: var(--color-bg-2); border-radius: 4px; box-shadow: 0 2px 8px #0001; }
-.radius-control { margin-inline-start: auto; color: var(--color-text-2); }
+.layer-summaries { justify-content: flex-end; }
+.map-settings-control { padding: 4px; background: var(--color-bg-2); border-radius: 4px; box-shadow: 0 2px 8px #0001; }
+.map-settings-control { margin-inline-start: auto; color: var(--color-text-2); }
 .map-display-settings { display: flex; flex-direction: column; gap: 10px; width: min(260px, calc(100vw - 64px)); }
 .map-display-settings small { color: var(--color-text-3); }
 .layer-summary { display: inline-flex; padding: 0; border: 0; background: none; }
@@ -566,6 +587,9 @@ onDeactivated(() => { selectedDetail.value = undefined; });
   background: var(--color-fill-2);
 }
 .coordinate-map { position: absolute; inset: 0; }
+.map-setting-field { display: flex; flex-direction: column; gap: 6px; }
+.map-setting-field > span { font-size: 12px; color: var(--color-text-2); }
+.theme-error { font-size: 12px; color: rgb(var(--danger-6)); }
 .coordinate-map :deep(.playback-position) {
   display: grid;
   place-items: center;

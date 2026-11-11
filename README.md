@@ -41,13 +41,15 @@ npm run dev
 
 页面说明的源文件是 `src/mock/requirements.ts`；当前整理文档见 [产品需求说明](docs/product-requirements.md)。较早的现网审查、客户系统参考文档仅作历史依据。
 
-## 高德地图与部署
+## 地图与部署
 
-代码内置临时原型 Key，GitHub Pages 无需配置 Key 即可构建。需要替换时，可在已忽略的 `.env.local` 中覆盖，参照 `.env.example`：
+核验地图默认使用百度地图；在地图右上角的显示设置中切换地图和主题。高德保留默认、月光银、远山黛，初始主题为月光银；百度保留默认、浅灰淡蓝、柔和银灰，初始主题为浅灰淡蓝。两种地图分别记忆当前浏览器的选择，切换主题保留点位、视野和轨迹播放状态；百度主题请求超时会恢复默认底图并提示重试。
+
+高德和百度地图均在代码中内置原型浏览器 Key，合并到 `main` 后由 GitHub Actions 自动构建并部署 Pages，无需额外配置百度 Key 或 Secret。百度 Key 位于 `src/utils/baidu-map.ts`，需允许实际访问域名。高德配置可在已忽略的 `.env.local` 中覆盖，参照 `.env.example`：
 
 - `VITE_AMAP_JS_KEY`：高德 JS API Key；兼容 `VITE_AMAP_KEY`。
 - `VITE_AMAP_SECURITY_JS_CODE`：如该Key要求安全密钥，则配置此项。
 
-环境变量在构建时注入，优先于内置 Key；GitHub Actions 可通过同名仓库 Secrets 覆盖。高德底图需要联网，商户和收运数据仍为模拟数据。
+高德环境变量在构建时注入，优先于内置 Key；GitHub Actions 可通过同名仓库 Secrets 覆盖。两种地图底图均需要联网，商户和收运数据仍为模拟数据。
 
 日常开发使用 `dev`。合并到 `main` 后 GitHub Actions 自动部署 Pages；本轮检查不执行提交、推送或部署。

@@ -1,3 +1,5 @@
+export const routeColors = { remaining: '#a8dae5', completed: '#007f9e' };
+
 export interface RouteSample {
   position: [number, number];
   timestamp: number;
@@ -30,13 +32,7 @@ export function formatRouteTime(timestamp: number, full = false) {
 
 export function routeFrame(samples: RouteSample[], timestamp: number): RouteFrame {
   const time = Math.max(samples[0]!.timestamp, Math.min(timestamp, samples.at(-1)!.timestamp));
-  let low = 0;
-  let high = samples.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (samples[middle]!.timestamp <= time) low = middle;
-    else high = middle - 1;
-  }
+  const low = routeSampleIndex(samples, time);
   const from = samples[low]!;
   const to = samples[low + 1] ?? from;
   const fraction = to.timestamp > from.timestamp ? (time - from.timestamp) / (to.timestamp - from.timestamp) : 0;
@@ -55,4 +51,29 @@ export function routeFrame(samples: RouteSample[], timestamp: number): RouteFram
   const x = Math.cos(latitude1) * Math.sin(latitude2) - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitudeDelta);
   const heading = x === 0 && y === 0 ? from.course ?? 0 : (Math.atan2(y, x) / radians + 360) % 360;
   return { position, timestamp: time, heading };
+}
+
+// 同一时间有多个采样时取最后一个，与位置插值保持一致。
+function routeSampleIndex(samples: RouteSample[], time: number): number {
+  let low = 0;
+  let high = samples.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (samples[middle]!.timestamp <= time) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+export function routeProgressPath(samples: RouteSample[], frame: RouteFrame): [number, number][] {
+  if (!samples.length) return [];
+  const index = routeSampleIndex(samples, frame.timestamp);
+  const path: [number, number][] = [];
+  const append = (position: [number, number]) => {
+    const previous = path.at(-1);
+    if (!previous || previous[0] !== position[0] || previous[1] !== position[1]) path.push(position);
+  };
+  for (let i = 0; i <= index; i++) append(samples[i]!.position);
+  append(frame.position);
+  return path;
 }
