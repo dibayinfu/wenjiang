@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseRouteImport } from '../src/utils/collection-import.ts';
-import { formatRouteTime, routeFrame, routeTimestamp } from '../src/utils/route-playback.ts';
+import { formatRouteTime, routeFrame, routeProgressPath, routeTimestamp } from '../src/utils/route-playback.ts';
 
 const parse = positions => parseRouteImport(JSON.stringify({ data: { positions } }));
 
@@ -47,4 +47,39 @@ test('无时间旧文件仍可绘图，缺时间或起止时间相同会给出�
   assert.equal(routeTimestamp('2026-11-11 25:00:00'), undefined);
   assert.equal(routeTimestamp('bad'), undefined);
   assert.equal(routeTimestamp('2026-11-11 08:00:00'), routeTimestamp('2026-11-11T00:00:00Z'));
+});
+
+
+test('已回放轨迹按时间截断并补齐插值位置，回退或重置时不会保留未来路段', () => {
+  const samples = [
+    { position: [103.8, 30.7], timestamp: 0 },
+    { position: [103.8, 30.7], timestamp: 1000 },
+    { position: [103.802, 30.7], timestamp: 3000 },
+    { position: [103.804, 30.7], timestamp: 5000 },
+  ];
+  const original = structuredClone(samples);
+  const progress = time => routeProgressPath(samples, routeFrame(samples, time));
+  assert.deepEqual(progress(-100), [samples[0].position]);
+  assert.deepEqual(progress(500), [samples[0].position]);
+  assert.deepEqual(progress(2000), [[103.8, 30.7], [103.801, 30.7]]);
+  assert.deepEqual(progress(5000), [samples[0].position, samples[2].position, samples[3].position]);
+  assert.deepEqual(progress(3000), [samples[0].position, samples[2].position]);
+  assert.deepEqual(progress(0), [samples[0].position]);
+  assert.deepEqual(samples, original);
+  assert.deepEqual(routeProgressPath([], routeFrame(samples, 0)), []);
+});
+
+test('相同时间的采样取最后一点，已回放路径末端与车辆当前位置一致', () => {
+  const samples = [
+    { position: [103.8, 30.7], timestamp: 0 },
+    { position: [103.801, 30.7], timestamp: 1000 },
+    { position: [103.802, 30.7], timestamp: 1000 },
+    { position: [103.803, 30.7], timestamp: 2000 },
+  ];
+  for (const time of [500, 1000, 1500, 2500, 0]) {
+    const frame = routeFrame(samples, time);
+    const path = routeProgressPath(samples, frame);
+    assert.deepEqual(path.at(-1), frame.position);
+    assert.ok(!path.slice(0, -1).includes(samples[3].position));
+  }
 });

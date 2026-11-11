@@ -36,3 +36,11 @@ export function bd09ToGcj02([longitude, latitude]: Position): Position {
   const angle = Math.atan2(y, x) - 0.000003 * Math.cos(x * scale);
   return [radius * Math.cos(angle), radius * Math.sin(angle)];
 }
+
+// 显示层使用 BD-09，业务匹配仍统一使用 GCJ-02，避免反复转换累积误差。
+export function gcj02ToBd09([longitude, latitude]: Position): Position {
+  const scale = Math.PI * 3000 / 180;
+  const radius = Math.hypot(longitude, latitude) + 0.00002 * Math.sin(latitude * scale);
+  const angle = Math.atan2(latitude, longitude) + 0.000003 * Math.cos(longitude * scale);
+  return [radius * Math.cos(angle) + 0.0065, radius * Math.sin(angle) + 0.006];
+}

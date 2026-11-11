@@ -29,7 +29,7 @@ export const router = createRouter({
           path: "tools/collection-coordinates",
           name: "WenjiangCollectionCoordinates",
           component: () => import("./views/CollectionCoordinates.vue"),
-          meta: { title: "收运核查地图", group: "临时工具" },
+          meta: { title: "核验地图", group: "临时工具" },
         },
         {
           path: "reports",

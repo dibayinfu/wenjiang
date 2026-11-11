@@ -49,7 +49,7 @@ function navigate(path: string) {
     <a-sub-menu key="business" title="业务设置"><template #icon><IconSettings /></template><a-menu-item key="/settings/units"><span style="color:rgb(var(--danger-6))">联单设置 · 新增</span></a-menu-item><a-menu-item key="/settings/weighbridge"><span style="color:rgb(var(--danger-6))">地磅设置 · 新增</span></a-menu-item></a-sub-menu>
     <a-sub-menu key="tools" title="临时工具">
       <template #icon><IconTool /></template>
-      <a-menu-item key="/tools/collection-coordinates">收运核查地图</a-menu-item>
+      <a-menu-item key="/tools/collection-coordinates">核验地图</a-menu-item>
     </a-sub-menu>
   </a-menu>
 </template>
