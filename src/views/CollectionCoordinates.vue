@@ -95,7 +95,7 @@ const layerSummaries = computed(() => [
     kind: 'fences', color: 'green', fileName: fenceBatch.value.fileName,
     label: `围栏 ${fenceBatch.value.points.length}处 / ${fenceBatch.value.total - fenceBatch.value.skipped}点`,
     skipped: fenceBatch.value.skipped,
-    hint: `共 ${fenceBatch.value.total - fenceBatch.value.skipped} 个收集点，点击绿色围栏查看详情。`,
+    hint: `共 ${fenceBatch.value.total - fenceBatch.value.skipped} 个收集点，点击绿色围栏查看详情。${fenceBatch.value.corrected ? `已按真实系统地图校正 ${fenceBatch.value.corrected} 点。` : ''}`,
   },
   routeBatch.value && {
     kind: 'route', color: 'cyan', fileName: routeBatch.value.fileName,
@@ -514,7 +514,7 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                   <a-descriptions-item label="所属商户">{{ selectedFenceRow.merchantName }}</a-descriptions-item>
                   <a-descriptions-item label="地址">{{ selectedFenceRow.address }}</a-descriptions-item>
                   <a-descriptions-item label="坐标">
-                    <a-tooltip :content="`${mapProviderName} ${coordinateSystem}（经度，纬度）；原始 BD-09 为 ${selectedDetail.point.sourcePosition.join('，')}`">
+                    <a-tooltip :content="`${mapProviderName} ${coordinateSystem}（经度，纬度）；原始导出 BD-09 为 ${selectedDetail.point.sourcePosition.join('，')}${selectedDetail.point.mapSourcePosition ? `；已按真实系统地图 BD-09 ${selectedDetail.point.mapSourcePosition.join('，')} 校正` : ''}`">
                       <span>{{ displayPosition(selectedDetail.point.position) }}</span>
                     </a-tooltip>
                   </a-descriptions-item>

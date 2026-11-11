@@ -1,6 +1,7 @@
 import { isMapCoordinate } from './point-fence.ts';
 import { bd09ToGcj02, wgs84ToGcj02 } from './collection-coordinates.ts';
 import { routeTimestamp, type RouteSample } from './route-playback.ts';
+import { collectionPointMapCorrections } from '../mock/collection-point-map-corrections.ts';
 
 interface CollectionImportRow {
   id: number;
@@ -21,6 +22,7 @@ export interface CollectionImportPoint {
 export interface CollectionFencePoint {
   position: [number, number];
   sourcePosition: [number, number];
+  mapSourcePosition?: [number, number];
   rows: {
     name: string;
     merchantName: string;
@@ -110,6 +112,7 @@ export function parseFenceImport(text: string) {
 
   const points = new Map<string, CollectionFencePoint>();
   let skipped = 0;
+  let corrected = 0;
   for (const record of records) {
     const position = isObject(record) ? readPosition(record.lng, record.lat) : undefined;
     if (!position || !isObject(record) || typeof record.name !== 'string' || !record.name.trim()) {
@@ -117,10 +120,17 @@ export function parseFenceImport(text: string) {
       continue;
     }
 
-    const key = position.join(',');
+    // 真实系统地图使用独立的 mapPoints 数据，列表 lng/lat 并非始终同步。
+    // 同时核对围栏 ID 和原坐标，避免将校正快照应用到后续已修改的位置。
+    const correction = collectionPointMapCorrections.find(item => item.fenceId === record.fenceId
+      && item.exportPosition[0] === position[0] && item.exportPosition[1] === position[1]);
+    const mapPosition = correction ? [...correction.mapPosition] as [number, number] : position;
+    if (correction) corrected++;
+    const key = mapPosition.join(',');
     let point = points.get(key);
     if (!point) {
-      point = { position: bd09ToGcj02(position), sourcePosition: position, rows: [] };
+      point = { position: bd09ToGcj02(mapPosition), sourcePosition: position,
+        ...(correction ? { mapSourcePosition: mapPosition } : {}), rows: [] };
       points.set(key, point);
     }
     point.rows.push({
@@ -131,7 +141,7 @@ export function parseFenceImport(text: string) {
     });
   }
 
-  return { total: records.length, skipped, points: [...points.values()] };
+  return { total: records.length, skipped, corrected, points: [...points.values()] };
 }
 
 export function parseRouteImport(text: string) {
