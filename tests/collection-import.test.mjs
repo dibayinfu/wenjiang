@@ -34,7 +34,29 @@ test('同坐标的不同收集点保留各自的商户、地址和更新时间�
   assert.deepEqual(result.points[0].rows.map(row => [row.name, row.merchantName, row.address, row.updateTime]), rows.map(row => [row.name, row.merchantName, row.address, row.updateTime]));
 });
 
-test('学院 A 在两个历史日期和手动导入中使用真实系统地图位置，两种底图保持一致', () => {
+test('学院 A 的旧导出坐标需要校正，真实地图坐标直接导入且不重复校正', () => {
+  const mapPosition = [103.81781280217406, 30.695696372735583];
+  for (const { sourcePosition, corrected } of [
+    { sourcePosition: [103.831556, 30.694759], corrected: 1 },
+    { sourcePosition: mapPosition, corrected: 0 },
+  ]) {
+    const row = { name: '学院 A', fenceId: 'geofence-1316745240329195520', lng: sourcePosition[0], lat: sourcePosition[1] };
+    const result = parseFenceImport(JSON.stringify({ data: { list: [row] } }));
+    assert.equal(result.corrected, corrected);
+    assert.equal(result.skipped, 0);
+    assert.equal(result.points.length, 1);
+    const point = result.points[0];
+    assert.deepEqual(point.sourcePosition, sourcePosition);
+    assert.deepEqual(point.mapSourcePosition, corrected ? mapPosition : undefined);
+    assert.ok(Math.abs(point.position[0] - 103.811408) < 0.000002);
+    assert.ok(Math.abs(point.position[1] - 30.689444) < 0.000002);
+    const baidu = gcj02ToBd09(point.position);
+    assert.ok(Math.abs(baidu[0] - mapPosition[0]) < 0.000002);
+    assert.ok(Math.abs(baidu[1] - mapPosition[1]) < 0.000002);
+  }
+});
+
+test('学院 A 在历史加载和手动导入中使用同一真实地图位置，兼容历史文件更新', () => {
   for (const date of ['261110', '261111']) {
     const file = readFileSync(new URL(`../src/mock/collection-history/${date}/商户收集点${date}.json`, import.meta.url), 'utf8');
     const result = parseFenceImport(file);
@@ -42,16 +64,13 @@ test('学院 A 在两个历史日期和手动导入中使用真实系统地图�
     const point = result.points.find(point => point.rows.some(row => row.name === original.name));
     const manual = parseFenceImport(JSON.stringify({ data: { list: [original] } }));
     assert.deepEqual(manual.points[0], point);
-    assert.equal(result.corrected, 12);
-    assert.equal(result.skipped, date === '261111' ? 2 : 0);
-    assert.deepEqual(point.sourcePosition, [103.831556, 30.694759]);
-    assert.deepEqual(point.mapSourcePosition, [103.81781280217406, 30.695696372735583]);
+    assert.deepEqual(point.sourcePosition, [original.lng, original.lat]);
     // 高德期望坐标来自已核验百度位置，不从收运 GPS 推断。
     assert.ok(Math.abs(point.position[0] - 103.811408) < 0.000002);
     assert.ok(Math.abs(point.position[1] - 30.689444) < 0.000002);
     const baidu = gcj02ToBd09(point.position);
-    assert.ok(Math.abs(baidu[0] - point.mapSourcePosition[0]) < 0.000002);
-    assert.ok(Math.abs(baidu[1] - point.mapSourcePosition[1]) < 0.000002);
+    assert.ok(Math.abs(baidu[0] - 103.81781280217406) < 0.000002);
+    assert.ok(Math.abs(baidu[1] - 30.695696372735583) < 0.000002);
   }
 });
 
