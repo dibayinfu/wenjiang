@@ -1,0 +1,20 @@
+{
+  "code": 0,
+  "msg": "示例数据",
+  "data": {
+    "totalCount": 1,
+    "list": [
+      {
+        "id": 1,
+        "name": "示例收集点",
+        "merchantId": 1,
+        "merchantName": "示例商户",
+        "address": "示例街道示例门牌",
+        "updateTime": "2026-11-11 07:00:00",
+        "lng": 103.80861024,
+        "lat": 30.70369245,
+        "fenceId": "sample-fence-1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "code": 0,
+  "msg": "示例数据",
+  "data": {
+    "totalCount": 1,
+    "list": [
+      {
+        "plateNumber": "示例车牌",
+        "rfid": "0000000000000000000001",
+        "organization": "示例机构",
+        "collectionPoint": "示例收集点",
+        "merchantName": "示例商户",
+        "weight": 12.5,
+        "createTime": "2026-11-11 08:00:00",
+        "date": "2026-11-11",
+        "collectionPointId": 1,
+        "merchantId": 1,
+        "lng": 103.8,
+        "lat": 30.7,
+        "routeName": "示例线路"
+      }
+    ]
+  }
+}
