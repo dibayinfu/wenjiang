@@ -1,0 +1,20 @@
+{
+  "code": 0,
+  "msg": "示例数据",
+  "data": {
+    "positions": [
+      {
+        "longitude": 103.8,
+        "latitude": 30.7,
+        "fixTime": "2026-11-11 08:00:00",
+        "carnum": "示例车牌"
+      },
+      {
+        "longitude": 103.801,
+        "latitude": 30.701,
+        "fixTime": "2026-11-11 08:01:00",
+        "carnum": "示例车牌"
+      }
+    ]
+  }
+}

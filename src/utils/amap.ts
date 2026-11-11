@@ -2,6 +2,7 @@ export interface AMapMarker {
   setMap(map: AMapInstance | null): void;
   setContent(content: string | HTMLElement): void;
   setOffset(offset: unknown): void;
+  setPosition(position: [number, number]): void;
   getPosition(): {getLng():number;getLat():number};
   on(event: string, handler: () => void): void;
 }
@@ -13,9 +14,18 @@ export interface MapShape {
   getRadius?():number;
   getPath?():LngLat[];
 }
-export interface AMapCircle extends MapShape { setRadius(radius: number): void }
-interface AMapLabelMarker { getPosition(): LngLat }
-interface AMapLabelsLayer { add(markers: AMapLabelMarker[]): void }
+export interface AMapCircle extends MapShape {
+  setRadius(radius: number): void;
+  setOptions(options: Record<string, unknown>): void;
+}
+interface AMapLabelMarker {
+  getPosition(): LngLat;
+  on(event: 'click', handler: () => void): void;
+}
+interface AMapLabelsLayer {
+  add(markers: AMapLabelMarker[]): void;
+  setMap(map: AMapInstance | null): void;
+}
 export interface AMapInstance {
   add(layer: AMapLabelsLayer | MapShape): void;
   destroy(): void;

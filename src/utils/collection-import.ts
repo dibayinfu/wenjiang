@@ -1,5 +1,6 @@
 import { isMapCoordinate } from './point-fence.ts';
 import { bd09ToGcj02, wgs84ToGcj02 } from './collection-coordinates.ts';
+import { routeTimestamp, type RouteSample } from './route-playback.ts';
 
 interface CollectionImportRow {
   id: number;
@@ -17,9 +18,15 @@ export interface CollectionImportPoint {
   rows: CollectionImportRow[];
 }
 
-interface CollectionFencePoint {
+export interface CollectionFencePoint {
   position: [number, number];
-  names: string[];
+  sourcePosition: [number, number];
+  rows: {
+    name: string;
+    merchantName: string;
+    address: string;
+    updateTime: string;
+  }[];
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -113,10 +120,15 @@ export function parseFenceImport(text: string) {
     const key = position.join(',');
     let point = points.get(key);
     if (!point) {
-      point = { position: bd09ToGcj02(position), names: [] };
+      point = { position: bd09ToGcj02(position), sourcePosition: position, rows: [] };
       points.set(key, point);
     }
-    point.names.push(record.name);
+    point.rows.push({
+      name: record.name,
+      merchantName: display(record.merchantName),
+      address: display(record.address),
+      updateTime: display(record.updateTime),
+    });
   }
 
   return { total: records.length, skipped, points: [...points.values()] };
@@ -128,7 +140,8 @@ export function parseRouteImport(text: string) {
     throw new Error('文件缺少 data.positions 轨迹数组。');
   }
 
-  const path: [number, number][] = [];
+  const validPositions: [number, number][] = [];
+  const samples: RouteSample[] = [];
   let skipped = 0;
   for (const row of positions as unknown[]) {
     // 轨迹导出的 valid / validPos 可能全为 false，绘图以坐标值为准。
@@ -137,13 +150,23 @@ export function parseRouteImport(text: string) {
       skipped++;
       continue;
     }
-    const previous = path.at(-1);
-    if (previous?.[0] === position[0] && previous[1] === position[1]) continue;
-    path.push(position);
+    const normalized = wgs84ToGcj02(position);
+    validPositions.push(normalized);
+    const timestamp = isObject(row) ? routeTimestamp(row.fixTime) ?? routeTimestamp(row.deviceTime) : undefined;
+    if (timestamp !== undefined && isObject(row)) {
+      const course = coordinate(row.course);
+      samples.push({ position: normalized, timestamp, course: typeof course === 'number' && Number.isFinite(course) ? (course % 360 + 360) % 360 : undefined });
+    }
   }
+  samples.sort((a, b) => a.timestamp - b.timestamp);
+  const completeTimes = samples.length === validPositions.length;
+  const orderedPositions = completeTimes ? samples.map(sample => sample.position) : validPositions;
+  const path = orderedPositions.filter((position, index) => index === 0 || position[0] !== orderedPositions[index - 1]![0] || position[1] !== orderedPositions[index - 1]![1]);
   if (path.length < 2) {
     throw new Error('路线至少需要两个不同的有效坐标点。');
   }
 
-  return { total: positions.length, skipped, path: path.map(wgs84ToGcj02) };
+  const playbackIssue = !completeTimes ? '部分轨迹点缺少有效时间，当前仅显示路线。'
+    : samples.at(-1)!.timestamp <= samples[0]!.timestamp ? '轨迹起止时间相同，无法播放。' : undefined;
+  return { total: positions.length, skipped, path, samples: playbackIssue ? [] : samples, playbackIssue };
 }
