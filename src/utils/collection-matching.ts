@@ -11,8 +11,8 @@ export function collectionMerchantNames(rows: { merchantName: string }[]) {
 }
 
 // 输入坐标均已在导入时统一为 GCJ-02。按商户索引，避免逐点扫描全部围栏。
-export function unmatchedCollectionCounts(points: CollectionImportPoint[], fences: CollectionFencePoint[], radius: number) {
-  const result = new Map<CollectionImportPoint, number>();
+export function unmatchedCollectionRows(points: CollectionImportPoint[], fences: CollectionFencePoint[], radius: number) {
+  const result = new Map<CollectionImportPoint, CollectionImportPoint['rows']>();
   if (!fences.length) return result;
 
   const byMerchant = new Map<string, CollectionFencePoint[]>();
@@ -27,7 +27,11 @@ export function unmatchedCollectionCounts(points: CollectionImportPoint[], fence
     const matched = new Set(collectionMerchantNames(point.rows).filter(name =>
       byMerchant.get(name)?.some(fence => fenceContains({ type: 'circle', center: fence.position, radius }, point.position)),
     ));
-    result.set(point, point.rows.filter(row => !matched.has(merchantName(row.merchantName))).length);
+    result.set(point, point.rows.filter(row => !matched.has(merchantName(row.merchantName))));
   }
   return result;
+}
+
+export function unmatchedCollectionCounts(points: CollectionImportPoint[], fences: CollectionFencePoint[], radius: number) {
+  return new Map([...unmatchedCollectionRows(points, fences, radius)].map(([point, rows]) => [point, rows.length]));
 }

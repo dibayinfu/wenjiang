@@ -10,7 +10,7 @@ import { mapThemeOptions, readMapThemes, saveMapThemes, type MapTheme } from '..
 import { gcj02ToBd09 } from '../utils/collection-coordinates';
 import { collectionHistoryDates, loadCollectionHistory, type CollectionBatches } from '../utils/collection-history';
 import { parseCollectionImport, parseFenceImport, parseRouteImport, type CollectionImportPoint } from '../utils/collection-import';
-import { collectionMerchantNames, unmatchedCollectionCounts } from '../utils/collection-matching';
+import { collectionMerchantNames, unmatchedCollectionRows } from '../utils/collection-matching';
 import { collectionSearchSuggestions, searchCollectionPoints, type CollectionSearchMode, type CollectionSearchResult } from '../utils/collection-search';
 import recordsSample from '../mock/collection-samples/收运明细样例.json?url&no-inline';
 import fencesSample from '../mock/collection-samples/商户收集点样例.json?url&no-inline';
@@ -40,8 +40,10 @@ const playbackFrame = shallowRef<RouteFrame>();
 watch(routeBatch, () => { playbackFrame.value = undefined; }, { flush: 'sync' });
 const selectedDetail = shallowRef<CollectionSearchResult>();
 const selectedFenceRowIndex = ref(0);
+const selectedRecordRowIndex = ref(0);
 const selectedFenceRow = computed(() => selectedDetail.value?.kind === 'fences' ? selectedDetail.value.point.rows[selectedFenceRowIndex.value] : undefined);
-watch(selectedDetail, () => { selectedFenceRowIndex.value = 0; }, { flush: 'sync' });
+const selectedRecordRows = computed(() => selectedDetail.value?.kind === 'records' ? selectedDetail.value.point.rows.slice(selectedRecordRowIndex.value, selectedRecordRowIndex.value + 1) : []);
+watch(selectedDetail, () => { selectedFenceRowIndex.value = 0; selectedRecordRowIndex.value = 0; }, { flush: 'sync' });
 const rfidKeyword = ref('');
 const merchantKeyword = ref('');
 const rfidSuggestions = computed(() => collectionSearchSuggestions(batch.value?.points ?? [], [], 'rfid', rfidKeyword.value));
@@ -79,10 +81,21 @@ const radius = ref(50);
 const showNames = ref(false);
 const highlightUnmatched = ref(false);
 const canMatch = computed(() => Boolean(batch.value?.points.length && fenceBatch.value?.points.length));
-const matchCounts = computed(() => highlightUnmatched.value && canMatch.value
-  ? unmatchedCollectionCounts(batch.value!.points, fenceBatch.value!.points, radius.value)
-  : new Map<CollectionImportPoint, number>());
-const unmatchedPointCount = computed(() => [...matchCounts.value.values()].filter(count => count > 0).length);
+const unmatchedRows = computed(() => highlightUnmatched.value && canMatch.value
+  ? unmatchedCollectionRows(batch.value!.points, fenceBatch.value!.points, radius.value)
+  : new Map<CollectionImportPoint, CollectionImportPoint['rows']>());
+const matchCounts = computed(() => new Map([...unmatchedRows.value].map(([point, rows]) => [point, rows.length])));
+const recordRowOptions = computed(() => {
+  const detail = selectedDetail.value;
+  if (detail?.kind !== 'records') return [];
+  const unmatched = unmatchedRows.value.get(detail.point);
+  return detail.point.rows.map((row, index) => ({
+    label: `${index + 1}. ${row.merchantName} · ${row.createTime}${highlightUnmatched.value && canMatch.value ? (unmatched?.includes(row) ? ' · 未匹配' : ' · 已匹配') : ''}`,
+    value: index,
+  }));
+});
+const unmatchedPointCount = computed(() => [...matchCounts.value].filter(([point, count]) => count === point.rows.length).length);
+const partialPointCount = computed(() => [...matchCounts.value].filter(([point, count]) => count > 0 && count < point.rows.length).length);
 const hasOverlays = computed(() => Boolean(batch.value?.points.length || fenceBatch.value?.points.length || routeBatch.value));
 const layerSummaries = computed(() => [
   batch.value && {
@@ -147,6 +160,11 @@ function locateSearchResult(index: number) {
   if (result.kind === 'fences') {
     const index = result.point.rows.findIndex(row => row.merchantName.trim().toLowerCase() === merchantKeyword.value.trim().toLowerCase());
     selectedFenceRowIndex.value = Math.max(0, index);
+  } else {
+    const index = result.point.rows.findIndex(row => rfidKeyword.value.trim()
+      ? row.rfid.trim().toLowerCase() === rfidKeyword.value.trim().toLowerCase()
+      : row.merchantName.trim().toLowerCase() === merchantKeyword.value.trim().toLowerCase());
+    selectedRecordRowIndex.value = Math.max(0, index);
   }
   activeMap?.locate(Math.max(activeMap.getZoom(), 17), result.point.position);
 }
@@ -291,12 +309,52 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       circles.push(circle);
     }
     const recordPins = new Map<CollectionImportPoint, HTMLElement>();
+    const recordItems = new Map<CollectionImportPoint, HTMLButtonElement[]>();
     for (const point of recordPoints) {
       const content = document.createElement('div');
       content.className = 'collection-record-marker';
       const pin = document.createElement('i');
       pin.className = 'collection-record-pin';
       content.append(pin);
+      if (point.rows.length > 1) {
+        const count = document.createElement('span');
+        count.className = 'collection-record-count';
+        count.textContent = String(point.rows.length);
+        content.append(count);
+        const expanded = document.createElement('div');
+        expanded.className = 'collection-record-expanded';
+        const lines = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        lines.classList.add('collection-record-links');
+        expanded.append(lines);
+        const items = point.rows.map((row, index) => {
+          // 只偏移气泡展示位置；所有记录仍锚定同一个真实坐标。
+          const angle = -Math.PI / 2 + (index + 0.5) * Math.PI * 2 / point.rows.length;
+          const distance = Math.max(36, point.rows.length * 7);
+          const dx = Math.cos(angle) * distance;
+          const dy = Math.sin(angle) * distance - 24;
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', '14'); line.setAttribute('y1', '33');
+          line.setAttribute('x2', String(14 + dx)); line.setAttribute('y2', String(33 + dy));
+          lines.append(line);
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'collection-record-item';
+          item.style.left = `${dx}px`; item.style.top = `${dy}px`;
+          item.append(pin.cloneNode());
+          const number = document.createElement('span');
+          number.textContent = String(index + 1);
+          item.append(number);
+          item.addEventListener('click', event => {
+            event.stopPropagation();
+            selectedDetail.value = { kind: 'records', point };
+            selectedRecordRowIndex.value = index;
+          });
+          expanded.append(item);
+          return item;
+        });
+        recordItems.set(point, items);
+        content.append(expanded);
+      }
       recordPins.set(point, content);
       map.marker(point.position, content, [-14, -33], () => {
         selectedDetail.value = { kind: 'records', point };
@@ -305,10 +363,12 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
 
     let selectedCircle: MapCircle | undefined;
     let selectedPin: HTMLElement | undefined;
-    stopEffects.push(watch(selectedDetail, detail => {
+    stopEffects.push(watch([selectedDetail, selectedRecordRowIndex], ([detail, rowIndex]) => {
       selectedCircle?.setOptions(fenceStyle);
       selectedCircle = undefined;
       selectedPin?.classList.remove('selected');
+      selectedPin?.classList.remove('expanded');
+      selectedPin?.querySelectorAll('.row-selected').forEach(item => item.classList.remove('row-selected'));
       selectedPin = undefined;
       if (detail?.kind === 'fences') {
         selectedCircle = circles[fencePoints.indexOf(detail.point)];
@@ -319,14 +379,26 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       } else if (detail?.kind === 'records') {
         selectedPin = recordPins.get(detail.point);
         selectedPin?.classList.add('selected');
+        if (detail.point.rows.length > 1) {
+          selectedPin?.classList.add('expanded');
+          recordItems.get(detail.point)?.[rowIndex]?.classList.add('row-selected');
+        }
       }
     }, { flush: 'sync' }));
 
     stopEffects.push(watch(matchCounts, counts => {
       for (const [point, content] of recordPins) {
         const count = counts.get(point) ?? 0;
-        content.classList.toggle('unmatched', count > 0);
+        content.classList.toggle('unmatched', count === point.rows.length);
+        content.classList.toggle('partial-match', count > 0 && count < point.rows.length);
         content.title = `${collectionMerchantNames(point.rows).join('、') || '未填写所属商户'} · ${point.rows.length} 条记录${count ? ` · ${count} 条未匹配` : ''}`;
+        recordItems.get(point)?.forEach((item, index) => {
+          const row = point.rows[index]!;
+          const unmatched = unmatchedRows.value.get(point)?.includes(row) ?? false;
+          item.classList.toggle('unmatched', unmatched);
+          item.title = `${row.merchantName} · ${row.createTime}${highlightUnmatched.value && canMatch.value ? (unmatched ? ' · 未匹配' : ' · 已匹配') : ''}`;
+          item.setAttribute('aria-label', item.title);
+        });
       }
     }, { immediate: true }));
 
@@ -338,7 +410,7 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
           offset: [0, 8] as [number, number], click: () => { selectedDetail.value = { kind: 'fences', point }; } })),
         ...recordPoints.map(point => ({ position: point.position,
           text: collectionMerchantNames(point.rows).join('、') || '未填写所属商户',
-          color: matchCounts.value.get(point) ? '#d03050' : '#165dff', offset: [0, -38] as [number, number],
+          color: !matchCounts.value.get(point) ? '#165dff' : matchCounts.value.get(point) === point.rows.length ? '#d03050' : '#d46b08', offset: [0, -38] as [number, number],
           click: () => { selectedDetail.value = { kind: 'records', point }; } })),
       ];
       onCleanup(map.labels(items));
@@ -489,7 +561,7 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                     <Checkbox v-model="showNames">显示名称</Checkbox>
                     <Checkbox v-model="highlightUnmatched" :disabled="!canMatch">高亮未匹配收运点坐标</Checkbox>
                     <small>{{ canMatch ? '收运坐标位于同名商户的围栏内，才算匹配。' : '导入收运明细和收集点后可核对匹配情况。' }}</small>
-                    <small v-if="highlightUnmatched && canMatch">未匹配 {{ unmatchedPointCount }} 个收运坐标点，以红色显示。</small>
+                    <small v-if="highlightUnmatched && canMatch">全部未匹配 {{ unmatchedPointCount }} 个坐标点（红色），部分未匹配 {{ partialPointCount }} 个坐标点（橙色）。同坐标的记录逐条核对。</small>
                   </div>
                 </template>
               </Popover>
@@ -522,7 +594,18 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                 </a-descriptions>
               </template>
               <template v-else>
-                <a-descriptions v-for="row in selectedDetail.point.rows" :key="row.id" class="point-fields" :column="1" size="small" layout="vertical">
+                <div v-if="selectedDetail.point.rows.length > 1" class="overlap-record-summary">
+                  同坐标共 {{ selectedDetail.point.rows.length }} 条收运记录，气泡已展开，连线指向真实位置。点击编号气泡或下方列表切换记录。
+                  <template v-if="highlightUnmatched && canMatch">{{ selectedDetail.point.rows.length - (matchCounts.get(selectedDetail.point) ?? 0) }} 条已匹配，{{ matchCounts.get(selectedDetail.point) ?? 0 }} 条未匹配。</template>
+                </div>
+                <a-select v-if="selectedDetail.point.rows.length > 1" v-model="selectedRecordRowIndex" class="overlap-selector" size="small"
+                  aria-label="切换同坐标收运记录" :options="recordRowOptions">
+                  <template #option="{ data }"><span class="overlap-option">{{ data.label }}</span></template>
+                </a-select>
+                <a-descriptions v-for="row in selectedRecordRows" :key="row.id" class="point-fields" :column="1" size="small" layout="vertical">
+                  <a-descriptions-item v-if="highlightUnmatched && canMatch" label="围栏匹配">
+                    <a-tag size="small" :color="unmatchedRows.get(selectedDetail.point)?.includes(row) ? 'red' : 'green'">{{ unmatchedRows.get(selectedDetail.point)?.includes(row) ? '未匹配同名商户围栏' : '已匹配同名商户围栏' }}</a-tag>
+                  </a-descriptions-item>
                   <a-descriptions-item v-for="[label, field] in recordFields" :key="field" :label="label">{{ row[field] }}</a-descriptions-item>
                   <a-descriptions-item :label="`坐标（${coordinateSystem}）`">{{ displayPosition(selectedDetail.point.position) }}</a-descriptions-item>
                 </a-descriptions>
@@ -624,6 +707,22 @@ onDeactivated(() => { selectedDetail.value = undefined; });
 .coordinate-map :deep(.collection-record-marker.selected .collection-record-pin) { box-shadow: 0 0 0 4px #165dff66; }
 .coordinate-map :deep(.collection-record-marker.unmatched .collection-record-pin) { background: #f53f3f; }
 .coordinate-map :deep(.collection-record-marker.unmatched.selected .collection-record-pin) { box-shadow: 0 0 0 4px #f53f3f66; }
+.coordinate-map :deep(.collection-record-marker.partial-match .collection-record-pin) { background: #ff7d00; }
+.coordinate-map :deep(.collection-record-marker.partial-match.selected .collection-record-pin) { box-shadow: 0 0 0 4px #ff7d0066; }
+.coordinate-map :deep(.collection-record-count) { position: absolute; right: -7px; top: -6px; min-width: 16px; height: 16px; padding: 0 2px; box-sizing: border-box; border-radius: 8px; background: #fff; color: #1d2129; text-align: center; font-size: 11px; line-height: 16px; box-shadow: 0 1px 4px #0004; }
+.coordinate-map :deep(.collection-record-expanded) { display: none; }
+.coordinate-map :deep(.collection-record-marker.expanded) { transform: none; }
+.coordinate-map :deep(.collection-record-marker.expanded > .collection-record-pin),
+.coordinate-map :deep(.collection-record-marker.expanded > .collection-record-count) { display: none; }
+.coordinate-map :deep(.collection-record-marker.expanded .collection-record-expanded) { display: block; }
+.coordinate-map :deep(.collection-record-links) { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; stroke: #4e5969; stroke-width: 1.5; stroke-dasharray: 3 2; }
+.coordinate-map :deep(.collection-record-item) { position: absolute; width: 28px; height: 36px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.coordinate-map :deep(.collection-record-item > span) { position: absolute; top: 2px; left: 2px; width: 24px; color: #fff; font-size: 12px; line-height: 24px; text-align: center; font-weight: 600; }
+.coordinate-map :deep(.collection-record-marker.expanded .collection-record-item .collection-record-pin) { background: #4d94ff; box-shadow: none; }
+.coordinate-map :deep(.collection-record-marker.expanded .collection-record-item.unmatched .collection-record-pin) { background: #f53f3f; }
+.coordinate-map :deep(.collection-record-item.row-selected) { transform: scale(1.18); transform-origin: 14px 33px; }
+.coordinate-map :deep(.collection-record-marker.expanded .collection-record-item.row-selected .collection-record-pin) { box-shadow: 0 0 0 4px #165dff66; }
+.coordinate-map :deep(.collection-record-marker.expanded .collection-record-item.unmatched.row-selected .collection-record-pin) { box-shadow: 0 0 0 4px #f53f3f66; }
 .map-detail {
   position: absolute;
   z-index: 12;
@@ -644,6 +743,7 @@ onDeactivated(() => { selectedDetail.value = undefined; });
   .has-playback .map-detail { max-height: calc(100% - var(--map-toolbar-height, 32px) - 148px); }
 }
 .overlap-selector { width: 100%; margin-bottom: 10px; }
+.overlap-record-summary { margin-bottom: 8px; color: var(--color-text-2); font-size: 12px; line-height: 20px; }
 .overlap-option { display: block; white-space: normal; overflow-wrap: anywhere; }
 .detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--color-border-2); }
 .detail-heading h3 { flex: 1; min-width: 0; margin: 0; font-size: 14px; line-height: 20px; }

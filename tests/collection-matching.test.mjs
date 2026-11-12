@@ -1,9 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { collectionMerchantNames, unmatchedCollectionCounts } from '../src/utils/collection-matching.ts';
+import { readFileSync } from 'node:fs';
+import { collectionMerchantNames, unmatchedCollectionCounts, unmatchedCollectionRows } from '../src/utils/collection-matching.ts';
+import { parseCollectionImport, parseFenceImport } from '../src/utils/collection-import.ts';
+import { gcj02ToBd09 } from '../src/utils/collection-coordinates.ts';
 
 const position = [103.8, 30.7];
 const fence = { position, rows: [{ merchantName: '商户甲' }, { merchantName: '商户乙' }] };
+
+test('261111 学院 D 附近的重合收运点：学院匹配，唐记未匹配，应区分逐条结果', () => {
+  const load = name => readFileSync(new URL(`../src/mock/collection-history/261111/${name}261111.json`, import.meta.url), 'utf8');
+  const points = parseCollectionImport(load('收运明细')).points;
+  const fences = parseFenceImport(load('商户收集点')).points;
+  const point = points.find(point => {
+    const bd = gcj02ToBd09(point.position);
+    return bd[0].toFixed(6) === '103.817999' && bd[1].toFixed(6) === '30.705853';
+  });
+  assert.ok(point);
+  assert.equal(point.rows.length, 2);
+  const unmatched = unmatchedCollectionRows([point], fences, 50).get(point);
+  assert.deepEqual(unmatched.map(row => row.merchantName), ['温江区满意唐记生椒牛肉面']);
+  assert.equal(unmatched.includes(point.rows.find(row => row.rfid === '5350445A5725010000029651')), false);
+  assert.equal(unmatchedCollectionCounts([point], fences, 50).get(point), 1);
+});
 
 test('按商户名称和空间同时匹配，重合坐标逐条判断，缺少商户名计未匹配', () => {
   const point = { position, rows: [' 商户甲 ', '商户乙', '商户丙', '—', ''].map(merchantName => ({ merchantName })) };
