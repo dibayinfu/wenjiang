@@ -313,8 +313,8 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       if (detail?.kind === 'fences') {
         selectedCircle = circles[fencePoints.indexOf(detail.point)];
         selectedCircle?.setOptions({
-          strokeColor: '#006b27', strokeWeight: 3,
-          fillColor: '#23a650', fillOpacity: 0.26, zIndex: 20,
+          strokeColor: '#006b27', strokeWeight: 4,
+          fillColor: '#23a650', fillOpacity: 0.30, zIndex: 20,
         });
       } else if (detail?.kind === 'records') {
         selectedPin = recordPins.get(detail.point);
@@ -620,10 +620,10 @@ onDeactivated(() => { selectedDetail.value = undefined; });
   background: #4d94ff;
   transform: rotate(-45deg);
 }
-.coordinate-map :deep(.collection-record-marker.selected) { transform: scale(1.08); transform-origin: 14px 33px; }
-.coordinate-map :deep(.collection-record-marker.selected .collection-record-pin) { box-shadow: 0 0 0 3px #165dff33; }
+.coordinate-map :deep(.collection-record-marker.selected) { transform: scale(1.18); transform-origin: 14px 33px; }
+.coordinate-map :deep(.collection-record-marker.selected .collection-record-pin) { box-shadow: 0 0 0 4px #165dff66; }
 .coordinate-map :deep(.collection-record-marker.unmatched .collection-record-pin) { background: #f53f3f; }
-.coordinate-map :deep(.collection-record-marker.unmatched.selected .collection-record-pin) { box-shadow: 0 0 0 3px #f53f3f33; }
+.coordinate-map :deep(.collection-record-marker.unmatched.selected .collection-record-pin) { box-shadow: 0 0 0 4px #f53f3f66; }
 .map-detail {
   position: absolute;
   z-index: 12;
