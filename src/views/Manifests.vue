@@ -5,10 +5,14 @@ import {Message,Modal} from '@arco-design/web-vue';
 import PageHeader from '../components/PageHeader.vue';
 import ProductRequirements from '../components/ProductRequirements.vue';
 import ManifestSheet from '../components/ManifestSheet.vue';
+import {downloadManifestPdf} from '../utils/manifest-pdf';
+import {printManifest} from '../utils/manifest-print';
 import {dailyManifests,type DailyManifest} from '../mock/daily-manifests';
 import {currentOrganization,currentTenant,newManifestTemplate,saveTemplate,saasOrganizations,regionLayouts,validateTemplate,type ManifestTemplate} from '../mock/manifest-templates';
 import {demo} from '../mock/store';
 const visible=ref(false),previewVisible=ref(false),keyword=ref('');const previewTemplate=ref<ManifestTemplate|null>(null);
+const printing=ref(false);
+async function printPreview(){if(!previewDocument.value||printing.value)return;printing.value=true;try{await printManifest(previewDocument.value);}catch{Message.error('联单打印失败，请重试');}finally{printing.value=false;}}
 const draft=reactive(newManifestTemplate());
 const list=computed(()=>dailyManifests.templates.filter(t=>t.tenantId===currentTenant.id&&t.name.includes(keyword.value.trim())));
 const columns=[{title:'模板名称',dataIndex:'name',width:190},{title:'所属机构',slotName:'organization',width:300},{title:'是否开启',slotName:'enabled',width:90},{title:'操作',slotName:'action',width:180}];
@@ -25,8 +29,13 @@ onDeactivated(()=>{visible.value=false;previewVisible.value=false;});
 </script>
 <template><div class="gi_page page-content"><PageHeader title="联单设置 · 新增" description="按租户维护联单模板，每个模板独立配置版式、单位与章。" module="业务设置"><a-button type="primary" @click="edit()">添加模板</a-button></PageHeader><ProductRequirements/><section class="panel"><div class="panel-heading"><h2>联单模板列表</h2><a-input v-model="keyword" placeholder="搜索模板名称" style="width:280px" allow-clear/></div><a-table class="template-list" :data="list" :columns="columns" :scroll="{x:760}" :pagination="{pageSize:8}" row-key="id"><template #organization="{record}">{{record.organizationName??currentOrganization.name}}</template><template #business>商户每日五联单</template><template #version="{record}">V{{record.version}}</template><template #enabled="{record}"><a-switch :model-value="record.enabled" :aria-label="`启用${record.name}`" @change="toggle(record)"/></template><template #updated="{record}">{{record.updatedAt?new Date(record.updatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'初始模板'}}</template><template #action="{record}"><a-space :size="4"><a-button type="text" @click="preview(record)">预览</a-button><a-button type="text" @click="edit(record)">编辑</a-button><a-button type="text" status="danger" @click="remove(record)">删除</a-button></a-space></template></a-table></section>
 <a-drawer :visible="visible" :title="draft.id?'编辑联单模板':'添加联单模板'" :width="'min(820px,96vw)'" :footer="false" @cancel="visible=false"><div class="template-editor"><a-form layout="vertical"><a-form-item label="所属机构 · 新增"><a-select v-model="draft.organizationId" :options="saasOrganizations.map(o=>({label:o.name,value:o.id}))" aria-label="所属机构"/></a-form-item><a-form-item label="版式名称" required><a-select v-model="draft.regionId" :options="regionLayouts.map(r=>({label:r.name,value:r.id}))" aria-label="版式名称"/></a-form-item><p class="layout-help">系统创建版式</p><section v-for="(unit,index) in draft.units" :key="unit.id" class="unit-fields"><a-form-item :label="index===0?'收运单位全称':'处置单位全称'" required><a-input v-model="unit.name" :max-length="100"/></a-form-item><a-form-item :label="index===0?'收运单位印章（PNG格式，2M以内）':'处置单位印章（PNG格式，2M以内）'" required><input type="file" accept="image/png" @change="upload($event,index)"/></a-form-item><div class="seal-actions"><img v-if="unit.seal" :src="unit.seal" width="80" height="80" alt="印章预览"/><a-button :disabled="!unit.seal" @click="removeSeal(index)">移除章</a-button></div></section><a-form-item label="是否开启"><a-switch v-model="draft.enabled" aria-label="模板是否开启"/></a-form-item><div class="modal-actions"><a-button @click="visible=false">取消</a-button><a-button type="primary" @click="save">保存模板</a-button></div></a-form></div></a-drawer>
-<a-drawer :visible="previewVisible" title="模板预览（模拟数据）" :width="'min(1000px,96vw)'" :footer="false" @cancel="previewVisible=false"><a-alert>预览不生成联单或分配编号，不改变已保存模板。</a-alert><ManifestSheet v-if="previewDocument" :document="previewDocument"/></a-drawer></div></template>
+<a-drawer :visible="previewVisible" title="模板预览（模拟数据）" :width="'min(1000px,96vw)'" :footer="false" @cancel="previewVisible=false"><a-alert>预览不生成联单或分配编号，不改变已保存模板。</a-alert><div class="preview-toolbar"><span class="preview-change">【调整】标准磅单尺寸 · 688 × 274 px</span><a-space><a-button :disabled="!previewDocument" @click="previewDocument && downloadManifestPdf(previewDocument)">下载预览 PDF</a-button><a-button type="primary" :disabled="!previewDocument" :loading="printing" @click="printPreview">打印</a-button></a-space></div><p class="layout-help preview-help">约 182.03 × 72.50 mm；打印选择匹配纸张、实际大小（100%），关闭页眉页脚。五联打印 5 份，使用同一编号。此处为模拟数据。</p><div class="preview-paper"><ManifestSheet v-if="previewDocument" :document="previewDocument"/></div></a-drawer></div></template>
 <style scoped>
+.preview-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:20px 0 12px; }
+.preview-change { color:rgb(var(--danger-6)); }
+.preview-help { line-height:1.7; margin:0 0 16px; }
+.preview-paper { padding:24px; background:var(--color-fill-2); overflow-x:auto; }
+.preview-paper :deep(.manifest-sheet) { max-width:none; margin:0 auto; box-shadow:0 2px 8px #00000014; }
 .template-list :deep(.arco-table-th),
 .template-list :deep(.arco-table-td) { padding-left: 8px; padding-right: 8px; }
 .layout-help { color: var(--color-text-3); font-size: 12px; margin: -8px 0 12px; }

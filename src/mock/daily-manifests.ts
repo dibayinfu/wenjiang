@@ -4,7 +4,8 @@ import {normalizePlate} from './weighbridge';
 import { computed, reactive, watch } from 'vue';
 import { demo, storageUnavailable } from './store';
 import { records, shiftDate } from './operations';
-import { type ManifestUnit } from './manifests';
+import { manifestSeals } from './manifest-seals';
+import { sealSample, type ManifestUnit } from './manifests';
 import {currentOrganization,regionLayouts,currentTenant,newManifestTemplate,type ManifestTemplate} from './manifest-templates';
 export interface DailyManifest { id:string; number?:string; organizationId?:string; key:string; date:string; merchant:string; kg:number; vehicles:string[]; carrier:ManifestUnit; processor:ManifestUnit; generatedAt:string; receiver?:string; oilKg?:number; drivers?:string[]; vehicleDrivers?:{vehicle:string;driver:string}[]; collectionDate?:string; processingDate?:string; template?:ManifestTemplate }
 interface State { templates:ManifestTemplate[]; documents:DailyManifest[] }
@@ -12,6 +13,12 @@ const storageKey=`wenjiang:daily-manifests:v2:${currentTenant.id}`;
 function restore():State {try{const x=JSON.parse(localStorage.getItem(storageKey)||'null');if(x&&Array.isArray(x.templates)&&Array.isArray(x.documents)){const templates=x.templates.filter((t:ManifestTemplate)=>t.tenantId===currentTenant.id).map((t:ManifestTemplate)=>({...t,name:regionLayouts.find(r=>r.id===t.regionId)?.name??regionLayouts[0]!.name,organizationId:t.organizationId??currentOrganization.id,organizationName:currentOrganization.name}));let found=false;for(const t of templates){if(t.enabled&&found)t.enabled=false;else if(t.enabled)found=true;}return {templates,documents:x.documents};}
 const old=JSON.parse(localStorage.getItem('wenjiang:daily-manifests:v1')||'null');const template=newManifestTemplate();template.id='TPL-migrated';if(old?.units?.length===2)template.units=old.units;template.enabled=old?.enabled===true;return {templates:[template],documents:Array.isArray(old?.documents)?old.documents:[]};}catch{return {templates:[],documents:[]};}}
 export const dailyManifests=reactive(restore());
+// 已缓存模板的旧演示章替换为用户指定原图；上传章及历史文书快照保留。
+for(const template of dailyManifests.templates){
+ for(const [index,unit] of template.units.entries()){
+  if(unit.seal===sealSample)unit.seal=index===0?manifestSeals.carrier:manifestSeals.processor;
+ }
+}
 // 补充旧模拟文书的展示编号，不修改内部ID、重量或单位印章快照。
 for(const d of dailyManifests.documents){d.organizationId??=currentOrganization.id;if(!d.number)d.number=nextManifestNumber(d.date,d.organizationId,dailyManifests.documents);}
 
