@@ -362,12 +362,12 @@ test('联单展示编号按机构日期递增、可跨机构重号并拦截9999�
  assert.throws(()=>nextManifestNumber('2026-10-30','a',[{organizationId:'a',number:'202610309999'}]));
 });
 
-test('联单模板两家单位印章必填，校验失败不保存或切换启用',async()=>{
+test('联单模板改用系统矢量章，无需上传图片但单位全称仍必填',async()=>{
  const {newManifestTemplate,saveTemplate,validateTemplate}=await import('../src/mock/manifest-templates.ts');
- const list=[];const t=newManifestTemplate();t.enabled=true;saveTemplate(list,t);const before=JSON.stringify(list);
- const missing=newManifestTemplate();missing.enabled=true;missing.units[0].seal='';
- assert.match(validateTemplate(missing),/收运单位PNG印章/);assert.throws(()=>saveTemplate(list,missing));assert.equal(JSON.stringify(list),before);
- missing.units[0].seal=t.units[0].seal;missing.units[1].seal='';assert.match(validateTemplate(missing),/处置单位PNG印章/);
+ const list=[];const t=newManifestTemplate();t.enabled=true;t.units.forEach(unit=>unit.seal='');
+ assert.equal(validateTemplate(t),undefined);saveTemplate(list,t);
+ const before=JSON.stringify(list);const missing=newManifestTemplate();missing.units[0].name='';
+ assert.match(validateTemplate(missing),/收运及处理单位/);assert.throws(()=>saveTemplate(list,missing));assert.equal(JSON.stringify(list),before);
 });
 
 test('地磅列表配置校验、机构启用互斥及原始单位转换',async()=>{
