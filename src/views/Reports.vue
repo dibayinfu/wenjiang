@@ -594,7 +594,7 @@ function pointLabel(r: Weighing) {
       <CollectionEventMap v-if="mapEvent" :record="mapEvent" />
     </a-modal>
     <a-drawer :visible="!!dailySelected" title="商户五联单" :width="'min(720px,96vw)'" :footer="false" @cancel="dailySelected=null">
-      <template v-if="dailySelected"><a-button type="primary" :loading="downloading" @click="downloadDaily">下载PDF</a-button>
+      <template v-if="dailySelected"><a-button type="primary" :loading="downloading" @click="downloadDaily">打印 / 另存PDF</a-button>
       <section class="manifest-copy"><ManifestSheet v-if="exampleSelected" :document="exampleSelected"/></section></template>
     </a-drawer>
     <a-drawer :visible="!!selectedWeighbridgeId" title="地磅完整信息（模拟）" :width="'min(820px,96vw)'" :footer="false" @cancel="selectedWeighbridgeId = ''">
