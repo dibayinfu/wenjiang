@@ -21,13 +21,13 @@ export function manifestPrintHtml(d: DailyManifest) {
 @page { size: ${manifestPaper.widthMm}mm ${manifestPaper.heightMm}mm; margin: 0; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: white; color: black; }
-/* 限定连续纸的单页打印区域，避免SVG的绘制边界产生末尾空白页。 */
-@media print { html, body { height: ${manifestPaper.heightMm}mm; overflow: hidden; } }
+/* 内容高度留出约5mm余量，避免驱动93.1mm取整和默认纸长产生空白页。 */
+@media print { html, body { height: 88mm; min-height: 0; overflow: hidden; } }
 body { font-family: SimSun, "Songti SC", "Noto Serif CJK SC", serif; font-size: 13.5pt; font-weight: bold; }
-.paper { width: ${manifestPaper.widthMm}mm; height: ${manifestPaper.heightMm}mm; padding: 3mm 16mm; display: flex; flex-direction: column; justify-content: center; break-inside: avoid; }
-.company { text-align: center; font-size: 15pt; line-height: 6.5mm; margin: 0; }
-h1 { text-align: center; font-size: 17pt; line-height: 7.5mm; margin: 0 0 1mm; }
-.number { text-align: right; font-size: 12pt; line-height: 5.5mm; margin: 0 0 1mm; }
+.paper { width: ${manifestPaper.widthMm}mm; height: 88mm; padding: 2mm 16mm; display: flex; flex-direction: column; justify-content: center; break-inside: avoid; }
+.company { text-align: center; font-size: 15pt; line-height: 6mm; margin: 0; }
+h1 { text-align: center; font-size: 17pt; line-height: 7mm; margin: 0 0 0.5mm; }
+.number { text-align: right; font-size: 12pt; line-height: 5mm; margin: 0 0 0.5mm; }
 table { flex-shrink: 0; width: 100%; border-collapse: collapse; table-layout: fixed; border: 0.25mm solid black; }
 col.label { width: 16%; } col.value { width: 34%; }
 tr { height: 10.5mm; break-inside: avoid; }
