@@ -13,7 +13,7 @@ npm run build
 npm run dev
 ```
 
-开发及预览端口为5173，访问 `http://127.0.0.1:5173/`。默认首页为车辆线路日报，使用 Hash 路由及相对资源路径。`npm run preview` 用于预览构建结果，与开发服务任选一个运行。
+开发及预览端口为5173，访问 `http://127.0.0.1:5173/`。默认首页为核验地图，使用 Hash 路由及相对资源路径。`npm run preview` 用于预览构建结果，与开发服务任选一个运行。
 
 ## 当前页面
 
@@ -53,3 +53,7 @@ npm run dev
 高德环境变量在构建时注入，优先于内置 Key；GitHub Actions 可通过同名仓库 Secrets 覆盖。两种地图底图均需要联网，商户和收运数据仍为模拟数据。
 
 日常开发使用 `dev`。合并到 `main` 后 GitHub Actions 自动部署 Pages；本轮检查不执行提交、推送或部署。
+
+## 服务器版打包与手动部署
+
+保留 GitHub Pages 部署。在 VSCode 的 Run and Debug 中选择“温江前端：打包服务器版（手动上传）”，或执行 `npm run build:server`。上传 `outputs/server/` 中的三个文件至 `/data/wenjiang/frontend/`，在服务器执行 `sh /data/wenjiang/frontend/deploy.sh`。完整命令与 Nginx 配置见 [服务器部署说明](docs/server-deployment.md)。
