@@ -35,12 +35,12 @@ test('首次部署安装配置并发布，更新保留上一版本且不覆盖�
   assert.equal(first.status, 0, first.stderr);
   const old = readlinkSync(join(f.deploy, 'current'));
   assert.ok(existsSync(join(old, 'index.html')));
-  writeFileSync(join(f.conf, 'wenjiang-frontend.conf'), 'custom configuration');
+  writeFileSync(join(f.conf, 'wenjiang.mozi365.com.conf'), 'custom configuration');
   const second = f.run();
   assert.equal(second.status, 0, second.stderr);
   assert.notEqual(readlinkSync(join(f.deploy, 'current')), old);
   assert.equal(readlinkSync(join(f.deploy, 'previous')), old);
-  assert.equal(readFileSync(join(f.conf, 'wenjiang-frontend.conf'), 'utf8'), 'custom configuration');
+  assert.equal(readFileSync(join(f.conf, 'wenjiang.mozi365.com.conf'), 'utf8'), 'custom configuration');
 });
 
 test('Nginx 重载失败恢复上一版，首次失败撤销版本和新增配置', t => {
@@ -48,7 +48,7 @@ test('Nginx 重载失败恢复上一版，首次失败撤销版本和新增配�
   const failed = f.run({ NGINX_RELOAD_STATUS: '1' });
   assert.notEqual(failed.status, 0);
   assert.equal(existsSync(join(f.deploy, 'current')), false);
-  assert.equal(existsSync(join(f.conf, 'wenjiang-frontend.conf')), false);
+  assert.equal(existsSync(join(f.conf, 'wenjiang.mozi365.com.conf')), false);
   assert.equal(f.run().status, 0);
   const old = readlinkSync(join(f.deploy, 'current'));
   assert.notEqual(f.run({ NGINX_RELOAD_STATUS: '1' }).status, 0);

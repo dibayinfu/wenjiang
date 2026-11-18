@@ -5,8 +5,12 @@
       "name": "温江前端：打包服务器版（手动上传）",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run build:server",
-      "cwd": "${workspaceFolder}"
+      "command": "bash scripts/build-server.sh",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_OPTIONS": "",
+        "VSCODE_INSPECTOR_OPTIONS": ""
+      }
     },
     {
       "name": "温江前端：启动开发环境",

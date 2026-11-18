@@ -14,7 +14,9 @@ npm run build:server
 
 - `wenjiang-frontend.tar.gz`：包根目录包含 index.html 和 assets。
 - `deploy.sh`：在 Linux 服务器执行的发布脚本。
-- `wenjiang-frontend.nginx.conf`：IP 访问的 Nginx 配置。
+- `wenjiang-frontend.nginx.conf`：域名 HTTPS 访问的 Nginx 配置。
+
+若旧的 VSCode 打包终端停在 `Waiting for the debugger to disconnect...`，先停止该次运行，再重新选择打包配置。新入口直接执行 Bash，并在打包子进程中清理调试器注入变量，避免类型检查结束后等待调试器；开发环境调试仍可正常使用。
 
 ## 手动上传
 
@@ -41,11 +43,11 @@ SSH 登录后执行：
 sh /data/wenjiang/frontend/deploy.sh
 ```
 
-首次发布自动安装 `/etc/nginx/conf.d/wenjiang-frontend.conf`；已有配置不会覆盖。配置监听 80 端口，`server_name` 为 `156.238.249.157`，静态目录为 `/data/wenjiang/frontend/current`。若同一 IP 已有站点配置，先调整其 `server_name`，避免重复；其他域名的站点可继续共用 80 端口。确保服务器防火墙和云安全组允许访问 TCP 80。
+首次发布自动安装 `/etc/nginx/conf.d/wenjiang.mozi365.com.conf`；已有配置不会覆盖。配置监听 80 和 443 端口，HTTP 自动跳转 HTTPS，`server_name` 为 `wenjiang.mozi365.com`，静态目录为 `/data/wenjiang/frontend/current`。域名需解析到 `156.238.249.157`；证书文件 `/etc/nginx/ssl/mozi365.com/mozi365.com.pem` 和私钥 `/etc/nginx/ssl/mozi365.com/mozi365.com.key` 必须存在，且证书覆盖该域名。其他域名的站点可继续共用 80、443 端口。确保服务器防火墙和云安全组允许访问 TCP 80、443。
 
 脚本先解压和校验，再执行 `nginx -t`，通过后切换 `current` 并平滑重载 Nginx。重载失败会恢复上一版；首次发布失败会撤销版本切换及新建配置。`current`、`previous` 必须是脚本管理的符号链接，不会覆盖已有实体目录。
 
-访问：<http://156.238.249.157/#/tools/collection-coordinates>
+访问：<https://wenjiang.mozi365.com/#/tools/collection-coordinates>
 
 ```text
 /data/wenjiang/frontend/
@@ -57,6 +59,16 @@ sh /data/wenjiang/frontend/deploy.sh
   releases/
 ```
 
-后续发布：重新打包，上传压缩包和最新脚本，再执行同一条部署命令。已有 Nginx 配置需调整时，在服务器手动编辑 `/etc/nginx/conf.d/wenjiang-frontend.conf` 后执行 `nginx -t && systemctl reload nginx`。
+后续发布：重新打包，上传压缩包和最新脚本，再执行同一条部署命令。已有 Nginx 配置需调整时，在服务器手动编辑 `/etc/nginx/conf.d/wenjiang.mozi365.com.conf` 后执行 `nginx -t && systemctl reload nginx`。
 
 前端保留 Hash 路由及相对资源路径；核验地图 API 仍直接访问 `https://car.r10iot.com`，与 GitHub Pages 的请求方式相同。部署文件不保存 SSH 密码、业务登录凭据或 Token。
+
+如服务器已经有同名域名配置，部署脚本会保留它。要应用新版配置，请先备份，再替换并验证：
+
+```sh
+cp -p /etc/nginx/conf.d/wenjiang.mozi365.com.conf /etc/nginx/conf.d/wenjiang.mozi365.com.conf.bak-$(date +%Y%m%d-%H%M%S)
+cp /data/wenjiang/frontend/wenjiang-frontend.nginx.conf /etc/nginx/conf.d/wenjiang.mozi365.com.conf
+nginx -t && systemctl reload nginx
+```
+
+旧版 IP 访问配置 `wenjiang-frontend.conf` 可与域名配置共存；请确保只有一份配置声明 `wenjiang.mozi365.com`，避免重复加载该域名。

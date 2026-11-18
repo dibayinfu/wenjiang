@@ -7,7 +7,7 @@ archive="$deploy_dir/wenjiang-frontend.tar.gz"
 current="$deploy_dir/current"
 next="$deploy_dir/.current-$$"
 previous_next="$deploy_dir/.previous-$$"
-nginx_conf=/etc/nginx/conf.d/wenjiang-frontend.conf
+nginx_conf=/etc/nginx/conf.d/wenjiang.mozi365.com.conf
 created_conf=0
 switched=0
 success=0
@@ -76,4 +76,4 @@ if [ -n "$previous" ]; then
     echo "上一版本：$previous"
 fi
 echo "发布成功：$release_dir"
-echo '访问地址：http://156.238.249.157/#/tools/collection-coordinates'
+echo '访问地址：https://wenjiang.mozi365.com/#/tools/collection-coordinates'

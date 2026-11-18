@@ -3,6 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 打包无需调试，避免 VSCode 自动附加让 npm / vue-tsc 等待调试器断开。
+# 仅清理当前脚本和子进程的环境，不影响开发调试配置。
+unset NODE_OPTIONS VSCODE_INSPECTOR_OPTIONS
+
 echo '[1/2] 构建服务器版前端'
 npm run typecheck
 npm exec -- vite build --outDir dist-server
