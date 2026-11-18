@@ -125,6 +125,21 @@ export function createCollectionOnlineLoader(api: CollectionApi) {
                 api.all('/api/collectionPoint/mapPoints', { status: '1' }, controller.signal),
               ]);
               const selected = selectRegisteredCollectionPoints(mapRows, registry);
+              // 新版 mapPoints 只返回点位，绑定围栏需按收集点 ID 批量补全。
+              const missing = selected.rows.filter(row => row.fenceId && !row.fenceLnglats);
+              for (let offset = 0; offset < missing.length; offset += 200) {
+                const group = missing.slice(offset, offset + 200);
+                const response = await api.request('/api/collectionPoint/fences', { ids: group.map(row => String(row.id)).join(',') }, controller.signal);
+                if (!Array.isArray(response.data) || !response.data.every(isApiObject)) throw new Error('围栏接口未返回有效的数据列表。');
+                for (const row of group) {
+                  const matches = response.data.filter(fence => String(fence.id) === String(row.id));
+                  const fence = matches[0];
+                  if (matches.length !== 1 || String(fence?.fenceId) !== String(row.fenceId)) throw new Error(`收集点 ${row.id} 的围栏缺失或绑定不一致，请重新更新。`);
+                  const parsed = parseFenceImport(wrap([{ ...row, fenceRadius: fence.fenceRadius, fenceLnglats: fence.fenceLnglats }]), { legacyCorrections: false, pointCoordinateSystem: 'wgs84' });
+                  if (!parsed.points[0]?.fence) throw new Error(`收集点 ${row.id} 的原始围栏无效，请检查正式系统。`);
+                  Object.assign(row, { fenceRadius: fence.fenceRadius, fenceLnglats: fence.fenceLnglats });
+                }
+              }
               fencePage(selected.rows, selected.rows.length);
               if (token() === sessionToken && batches.fences) pointsCache = { token: sessionToken, batch: batches.fences, warnings: [...layerWarnings.fences] };
             }

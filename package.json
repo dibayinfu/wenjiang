@@ -11,7 +11,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "vue-tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build:server": "bash scripts/build-server.sh"
   },
   "dependencies": {
     "@arco-design/color": "^0.4.0",

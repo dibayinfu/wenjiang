@@ -2,15 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "温江前端：打包服务器版（手动上传）",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bash scripts/build-server.sh",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_OPTIONS": "",
+        "VSCODE_INSPECTOR_OPTIONS": ""
+      }
+    },
+    {
       "name": "温江前端：启动开发环境",
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/node_modules/vite/bin/vite.js",
-      "args": ["--host", "127.0.0.1"],
+      "args": [
+        "--host",
+        "127.0.0.1"
+      ],
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
       "killBehavior": "forceful",
       "env": {
         "NO_COLOR": "1"

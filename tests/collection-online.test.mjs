@@ -4,10 +4,11 @@ import { CollectionApi } from '../src/utils/collection-api.ts';
 import { collectionToday, nextCollectionDate, validateCollectionDate, createCollectionOnlineLoader } from '../src/utils/collection-online.ts';
 import { collectionPointOrganization } from '../src/mock/collection-scope.ts';
 import { collectionVehicles } from '../src/mock/collection-vehicles.ts';
+import { collectionFenceGeometry } from '../src/utils/collection-fence-geometry.ts';
 
 const registeredPoint = { id: 1, name: '点位', merchantId: 1, org: collectionPointOrganization, status: 1 };
 const mapPoint = { ...registeredPoint, lng: 103.8, lat: 30.6 };
-const academy = { ...registeredPoint, id: 105, name: '学院 A', fenceId: 'geofence-1316745240329195520', lng: 103.831556, lat: 30.694759 };
+const academy = { ...registeredPoint, id: 105, name: '学院 A', fenceId: 'geofence-1316745240329195520', lng: 103.831556, lat: 30.694759, fenceRadius: 30, fenceLnglats: '103.831556,30.694759' };
 const signal = () => new AbortController().signal;
 const json = data => new Response(JSON.stringify({ code: 0, data }), { headers: { 'Content-Type': 'application/json' } });
 function setup(fetcher) {
@@ -19,6 +20,53 @@ function setup(fetcher) {
   }, fetcher);
   return { api, token: () => token, prompts: () => prompts };
 }
+
+test('新版地图接口不含围栏时批量补全：香香米使用原始 30 米，跨日复用且更新重新读取', async () => {
+  const point = { ...registeredPoint, id: 289, name: '温江区香香米快餐店（收集点）', fenceId: 'fence-289', lng: 103.81, lat: 30.70, fenceLnglats: '' };
+  const second = { ...point, id: 290, fenceId: 'fence-290' };
+  let calls = 0;
+  const client = setup(async url => {
+    if (url.pathname === '/api/collectionPoints') return json({ totalCount: 2, list: [point, second] });
+    if (url.pathname === '/api/collectionPoint/mapPoints') return json([point, second]);
+    if (url.pathname === '/api/collectionPoint/fences') {
+      calls++;
+      assert.equal(url.searchParams.get('ids'), '289,290');
+      return json([second, point].map(row => ({ id: row.id, fenceId: row.fenceId, fenceRadius: 30, fenceLnglats: '103.81,30.70' })));
+    }
+    if (url.pathname === '/api/plateRecord/details') return json({ totalCount: 0, list: [] });
+    return json({ positions: [] });
+  });
+  const load = createCollectionOnlineLoader(client.api);
+  const result = await load(collectionVehicles[0], '2026-11-10', signal(), false, () => {}, client.token);
+  assert.equal(result.layers.fences.status, 'complete');
+  const actual = result.batches.fences.points.find(p => p.rows.some(row => row.id === '289'));
+  assert.equal(actual.fence.radius, 30);
+  assert.equal(collectionFenceGeometry(actual, 0).radius, 30);
+  await load(collectionVehicles[0], '2026-11-11', signal(), false, () => {}, client.token);
+  assert.equal(calls, 1);
+  await load(collectionVehicles[0], '2026-11-11', signal(), true, () => {}, client.token);
+  assert.equal(calls, 2);
+});
+
+test('绑定围栏加载失败、缺失或不一致时明确报错，不悄悄使用 50 米参考圆', async () => {
+  for (const response of [null, [], [{ id: 1, fenceId: 'wrong', fenceRadius: 30 }], [{ id: 1, fenceId: 'bound', fenceRadius: -1 }]]) {
+    const point = { ...mapPoint, fenceId: 'bound' };
+    const client = setup(async url => {
+      if (url.pathname === '/api/collectionPoints') return json({ totalCount: 1, list: [point] });
+      if (url.pathname === '/api/collectionPoint/mapPoints') return json([point]);
+      if (url.pathname === '/api/collectionPoint/fences') {
+        if (response === null) throw new Error('网络错误');
+        return json(response);
+      }
+      if (url.pathname === '/api/plateRecord/details') return json({ totalCount: 0, list: [] });
+      return json({ positions: [] });
+    });
+    const result = await createCollectionOnlineLoader(client.api)(collectionVehicles[0], '2026-11-10', signal(), false, () => {}, client.token);
+    assert.equal(result.layers.fences.status, 'error');
+    assert.equal(result.batches.fences, undefined);
+    assert.equal(result.layers.records.status, 'complete');
+  }
+});
 
 test('分页遵循服务端总数与实际分页，每页带车辆，不依赖请求 pageSize', async () => {
   const calls = [];
