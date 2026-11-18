@@ -56,7 +56,7 @@ test('学院 A 的旧导出坐标需要校正，真实地图坐标直接导入�
   }
 });
 
-test('学院 A 在历史加载和手动导入中使用同一真实地图位置，兼容历史文件更新', () => {
+test('学院 A 的旧导出批次共用校正规则，兼容手动导入文件更新', () => {
   for (const date of ['261110', '261111']) {
     const file = readFileSync(new URL(`../src/mock/collection-history/${date}/商户收集点${date}.json`, import.meta.url), 'utf8');
     const result = parseFenceImport(file);

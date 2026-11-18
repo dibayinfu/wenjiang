@@ -7,14 +7,14 @@ type Position = [number, number];
 interface Point { lng: number; lat: number }
 interface Overlay { initialize?(map: NativeMap): HTMLElement; draw?(): void }
 interface NativePolyline extends Overlay { setPath(path: Point[]): void }
-interface NativeCircle extends Overlay {
+interface NativeShape extends Overlay {
   addEventListener(event: string, handler: () => void): void;
-  setRadius(value: number): void;
   setStrokeColor(value: string): void;
   setStrokeWeight(value: number): void;
   setFillColor(value: string): void;
   setFillOpacity(value: number): void;
 }
+interface NativeCircle extends NativeShape { setRadius(value: number): void; }
 interface NativeMap {
   centerAndZoom(point: Point, zoom: number): void;
   setMapStyleV2(options: { styleJson?: MapStyleRule[]; version?: 'v3' }): void;
@@ -25,6 +25,7 @@ interface NativeMap {
   getZoom(): number;
   addOverlay(overlay: Overlay): void;
   removeOverlay(overlay: Overlay): void;
+  clearOverlays(): void;
   getPanes(): { markerPane: HTMLElement };
   pointToOverlayPixel(point: Point): { x: number; y: number };
   setViewport(points: Point[], options: Record<string, unknown>): void;
@@ -37,6 +38,7 @@ interface BaiduApi {
   Point: new (lng: number, lat: number) => Point;
   Overlay: new () => Overlay;
   Circle: new (center: Point, radius: number, options: Record<string, unknown>) => NativeCircle;
+  Polygon: new (path: Point[], options: Record<string, unknown>) => NativeShape;
   Polyline: new (path: Point[], options: Record<string, unknown>) => NativePolyline;
 }
 let loader: Promise<BaiduApi> | undefined;
@@ -128,9 +130,18 @@ export async function loadBaiduCollectionMap(element: HTMLElement, center: Posit
       remove() { map.removeOverlay(overlay); },
     };
   }
+  function shapeOptions(shape: NativeShape) {
+    return { setOptions(options: Record<string, unknown>) {
+      if (typeof options.strokeColor === 'string') shape.setStrokeColor(options.strokeColor);
+      if (typeof options.strokeWeight === 'number') shape.setStrokeWeight(options.strokeWeight);
+      if (typeof options.fillColor === 'string') shape.setFillColor(options.fillColor);
+      if (typeof options.fillOpacity === 'number') shape.setFillOpacity(options.fillOpacity);
+    } };
+  }
   return {
     setTheme,
     destroy: () => { cancelTheme?.(); map.destroy(); },
+    clear: () => { map.clearOverlays(); bounds.length = 0; },
     resize: () => map.checkResize(),
     fit: () => { if (bounds.length) map.setViewport(bounds, { margins: [40, 40, 40, 40], enableAnimation: false }); },
     getZoom: () => map.getZoom(),
@@ -179,14 +190,17 @@ export async function loadBaiduCollectionMap(element: HTMLElement, center: Posit
       circle.addEventListener('click', click);
       map.addOverlay(circle);
       return {
+        ...shapeOptions(circle),
         setRadius: value => circle.setRadius(value),
-        setOptions(options) {
-          if (typeof options.strokeColor === 'string') circle.setStrokeColor(options.strokeColor);
-          if (typeof options.strokeWeight === 'number') circle.setStrokeWeight(options.strokeWeight);
-          if (typeof options.fillColor === 'string') circle.setFillColor(options.fillColor);
-          if (typeof options.fillOpacity === 'number') circle.setFillOpacity(options.fillOpacity);
-        },
       };
+    },
+    polygon(path, style, click) {
+      const points = path.map(point);
+      bounds.push(...points);
+      const polygon = new api.Polygon(points, { ...style, enableClicking: true });
+      polygon.addEventListener('click', click);
+      map.addOverlay(polygon);
+      return shapeOptions(polygon);
     },
     labels(items) {
       const labels = items.map(item => {

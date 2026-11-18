@@ -44,13 +44,13 @@ function navigate(path: string) {
     auto-open-selected
     @menu-item-click="navigate"
   >
-    <a-sub-menu key="reports" title="作业监管"><template #icon><IconBarChart /></template><a-menu-item v-for="page in reportPages" :key="page.path"><span :style="page.upgrade ? {color:'rgb(var(--danger-6))'} : undefined">{{page.title}}</span></a-menu-item></a-sub-menu>
-    <a-sub-menu key="merchantAssets" title="商户资产"><template #icon><IconStorage /></template><a-menu-item key="/merchants">商户管理</a-menu-item><a-menu-item key="/assets/points">商户收集点</a-menu-item></a-sub-menu>
-    <a-sub-menu key="business" title="业务设置"><template #icon><IconSettings /></template><a-menu-item key="/settings/units"><span style="color:rgb(var(--danger-6))">联单设置 · 新增</span></a-menu-item><a-menu-item key="/settings/weighbridge"><span style="color:rgb(var(--danger-6))">地磅设置 · 新增</span></a-menu-item></a-sub-menu>
     <a-sub-menu key="tools" title="临时工具">
       <template #icon><IconTool /></template>
       <a-menu-item key="/tools/collection-coordinates">核验地图</a-menu-item>
     </a-sub-menu>
+    <a-sub-menu key="reports" title="作业监管"><template #icon><IconBarChart /></template><a-menu-item v-for="page in reportPages" :key="page.path">{{page.title}}</a-menu-item></a-sub-menu>
+    <a-sub-menu key="merchantAssets" title="商户资产"><template #icon><IconStorage /></template><a-menu-item key="/merchants">商户管理</a-menu-item><a-menu-item key="/assets/points">商户收集点</a-menu-item></a-sub-menu>
+    <a-sub-menu key="business" title="业务设置"><template #icon><IconSettings /></template><a-menu-item key="/settings/units">联单设置</a-menu-item><a-menu-item key="/settings/weighbridge">地磅设置</a-menu-item></a-sub-menu>
   </a-menu>
 </template>
 <style scoped>

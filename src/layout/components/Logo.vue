@@ -7,7 +7,7 @@ const logo = `${import.meta.env.BASE_URL}logo.svg`;
 </script>
 <template>
   <RouterLink
-    to="/reports/vehicles"
+    to="/tools/collection-coordinates"
     class="system-logo"
     :class="{ collapsed }"
     aria-label="温江餐厨首页"

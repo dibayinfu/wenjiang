@@ -5,13 +5,14 @@ import { amapThemeStyles, defaultMapThemes, type MapProvider, type MapTheme } fr
 export type { MapProvider } from './map-themes';
 
 type Position = [number, number];
-export interface MapCircle {
-  setRadius(radius: number): void;
+export interface MapFence {
   setOptions(options: Record<string, unknown>): void;
 }
+export interface MapCircle extends MapFence { setRadius(radius: number): void; }
 export interface CollectionMap {
   setTheme(theme: MapTheme): Promise<void>;
   destroy(): void;
+  clear(): void;
   resize(): void;
   fit(): void;
   getZoom(): number;
@@ -19,6 +20,7 @@ export interface CollectionMap {
   route(path: Position[]): { setProgress(path: Position[]): void };
   marker(position: Position, content: HTMLElement, offset: Position, click?: () => void, zIndex?: number): { setPosition(position: Position): void };
   circle(position: Position, radius: number, style: Record<string, unknown>, click: () => void): MapCircle;
+  polygon(path: Position[], style: Record<string, unknown>, click: () => void): MapFence;
   labels(items: { position: Position; text: string; color: string; offset: Position; click: () => void }[]): () => void;
 }
 
@@ -29,6 +31,7 @@ export async function createCollectionMap(provider: MapProvider, element: HTMLEl
   return {
     setTheme: async value => { map.setMapStyle(`amap://styles/${amapThemeStyles[value]}`); },
     destroy: () => map.destroy(),
+    clear: () => map.clearMap(),
     resize: () => map.resize(),
     fit: () => map.setFitView(undefined, true, [40, 40, 40, 40]),
     getZoom: () => map.getZoom(),
@@ -57,6 +60,12 @@ export async function createCollectionMap(provider: MapProvider, element: HTMLEl
       circle.on('click', click);
       circle.setMap(map);
       return circle;
+    },
+    polygon(path, style, click) {
+      const polygon = new api.Polygon({ ...style, path, cursor: 'pointer' });
+      polygon.on('click', click);
+      polygon.setMap(map);
+      return polygon;
     },
     labels(items) {
       const layer = new api.LabelsLayer({ collision: false, allowCollision: false, zIndex: 120 });
