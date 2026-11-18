@@ -75,7 +75,7 @@ function toggleMenu() {
           mode="horizontal"
           :selected-keys="['wenjiang']"
           :auto-open-selected="false"
-          @menu-item-click="$router.push('/reports/vehicles')"
+          @menu-item-click="$router.push('/tools/collection-coordinates')"
           ><a-menu-item key="wenjiang"
             ><template #icon><IconDashboard :size="24" /></template
             >温江餐厨</a-menu-item

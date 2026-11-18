@@ -9,6 +9,7 @@ export interface AMapMarker {
 export interface LngLat {getLng():number;getLat():number}
 export interface MapShape {
   setMap(map:AMapInstance|null):void;
+  setOptions(options: Record<string, unknown>): void;
   on(event: 'click', handler: () => void): void;
   getCenter?():LngLat;
   getRadius?():number;
@@ -32,6 +33,7 @@ interface AMapLabelsLayer {
 export interface AMapInstance {
   add(layer: AMapLabelsLayer | MapShape): void;
   destroy(): void;
+  clearMap(): void;
   resize(): void;
   setMapStyle(style: string): void;
   setFitView(markers?: AMapMarker[], immediately?: boolean, padding?: number[]): void;

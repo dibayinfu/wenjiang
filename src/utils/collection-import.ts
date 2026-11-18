@@ -1,7 +1,10 @@
 import { isMapCoordinate } from './point-fence.ts';
-import { bd09ToGcj02, wgs84ToGcj02 } from './collection-coordinates.ts';
+import { bd09ToGcj02, gcj02ToBd09, wgs84ToGcj02 } from './collection-coordinates.ts';
+import { readCollectionFenceGeometry } from './collection-fence-geometry.ts';
+import type { PointFence } from '../mock/operations.ts';
 import { routeTimestamp, type RouteSample } from './route-playback.ts';
 import { collectionPointMapCorrections } from '../mock/collection-point-map-corrections.ts';
+import { selectRegisteredCollectionPoints } from './collection-point-scope.ts';
 
 interface CollectionImportRow {
   id: number;
@@ -21,9 +24,13 @@ export interface CollectionImportPoint {
 
 export interface CollectionFencePoint {
   position: [number, number];
-  sourcePosition: [number, number];
+  sourcePosition?: [number, number];
   mapSourcePosition?: [number, number];
+  fence?: PointFence;
+  geometrySource?: 'boundary' | 'configured' | 'verified' | 'reference';
   rows: {
+    id?: string;
+    organization?: string;
     name: string;
     merchantName: string;
     address: string;
@@ -104,7 +111,7 @@ export function parseCollectionImport(text: string) {
   return { total: records.length, skipped, points: [...points.values()] };
 }
 
-export function parseFenceImport(text: string) {
+export function parseFenceImport(text: string, options: { legacyCorrections?: boolean; pointCoordinateSystem?: 'bd09' | 'wgs84' } = {}) {
   const records = readRecords(text);
   if (records.length && !records.some(record => isObject(record) && 'name' in record)) {
     throw new Error('文件缺少商户收集点名称（name）。');
@@ -115,33 +122,64 @@ export function parseFenceImport(text: string) {
   let corrected = 0;
   for (const record of records) {
     const position = isObject(record) ? readPosition(record.lng, record.lat) : undefined;
-    if (!position || !isObject(record) || typeof record.name !== 'string' || !record.name.trim()) {
+    if (!isObject(record) || typeof record.name !== 'string' || !record.name.trim()) {
       skipped++;
       continue;
     }
 
     // 真实系统地图使用独立的 mapPoints 数据，列表 lng/lat 并非始终同步。
     // 同时核对围栏 ID 和原坐标，避免将校正快照应用到后续已修改的位置。
-    const correction = collectionPointMapCorrections.find(item => item.fenceId === record.fenceId
+    const geometry = readCollectionFenceGeometry(record.fenceLnglats, record.fenceRadius, position, options.pointCoordinateSystem);
+    const correction = geometry || !position || options.legacyCorrections === false ? undefined : collectionPointMapCorrections.find(item => item.fenceId === record.fenceId
       && item.exportPosition[0] === position[0] && item.exportPosition[1] === position[1]);
-    const mapPosition = correction ? [...correction.mapPosition] as [number, number] : position;
+    const mapPosition = geometry?.centerBd09 ?? (correction ? [...correction.mapPosition] as [number, number]
+      : position ? options.pointCoordinateSystem === 'wgs84' ? gcj02ToBd09(wgs84ToGcj02(position)) : position : undefined);
+    if (!mapPosition) { skipped++; continue; }
+    const normalized = bd09ToGcj02(mapPosition);
+    const fence = geometry?.fence ?? (correction?.radius ? { type: 'circle' as const, center: normalized, radius: correction.radius } : undefined);
     if (correction) corrected++;
-    const key = mapPosition.join(',');
+    const key = `${mapPosition.join(',')}:${fence ? JSON.stringify(fence) : ''}`;
     let point = points.get(key);
     if (!point) {
-      point = { position: bd09ToGcj02(mapPosition), sourcePosition: position,
-        ...(correction ? { mapSourcePosition: mapPosition } : {}), rows: [] };
+      point = { position: normalized, sourcePosition: position, fence,
+        geometrySource: geometry ? geometry.fromBoundary ? 'boundary' : 'configured' : correction ? 'verified' : 'reference',
+        ...((geometry || correction || options.pointCoordinateSystem === 'wgs84') ? { mapSourcePosition: mapPosition } : {}), rows: [] };
       points.set(key, point);
     }
     point.rows.push({
+      id: display(record.id),
+      organization: display(record.org),
       name: record.name,
       merchantName: display(record.merchantName),
-      address: display(record.address),
+      address: display(record.address ?? record.location),
       updateTime: display(record.updateTime),
     });
   }
 
   return { total: records.length, skipped, corrected, points: [...points.values()] };
+}
+
+// 离线快照与在线 mapPoints 共用坐标和围栏规则，不套用旧导出坐标补丁。
+export function parseCollectionPointSnapshot(text: string) {
+  const snapshot: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
+  if (!isObject(snapshot) || snapshot.pointCoordinateSystem !== 'wgs84'
+    || typeof snapshot.capturedAt !== 'string' || !Number.isFinite(Date.parse(snapshot.capturedAt))) {
+    throw new Error('本地收集点快照缺少有效的坐标系或采集时间。');
+  }
+  if (!isObject(snapshot.data) || !Array.isArray(snapshot.data.list) || snapshot.data.totalCount !== snapshot.data.list.length) {
+    throw new Error('本地收集点快照条数不完整，请重新保存完整快照。');
+  }
+  if (!isObject(snapshot.registry) || !Array.isArray(snapshot.registry.list)
+    || snapshot.registry.totalCount !== snapshot.registry.list.length || !snapshot.registry.list.every(isObject)
+    || !snapshot.data.list.every(isObject)) throw new Error('本地快照缺少完整的正式收集点档案。');
+  const selected = selectRegisteredCollectionPoints(snapshot.data.list, snapshot.registry.list);
+  if (selected.excluded) throw new Error('本地快照含有未通过温江正式档案核验的地图点，请更新完整快照。');
+  const capturedDate = new Date(Date.parse(snapshot.capturedAt) + 8 * 3600000).toISOString().slice(0, 10);
+  return {
+    ...parseFenceImport(JSON.stringify({ data: { list: selected.rows } }), { legacyCorrections: false, pointCoordinateSystem: 'wgs84' }),
+    fileName: `本地收集点快照 · ${capturedDate}`,
+    snapshotAt: snapshot.capturedAt,
+  };
 }
 
 export function parseRouteImport(text: string) {

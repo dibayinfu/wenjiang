@@ -8,7 +8,7 @@ export const router = createRouter({
     {
       path: "/",
       component: LayoutMix,
-      redirect: "/reports/vehicles",
+      redirect: "/tools/collection-coordinates",
       children: [
         {
           path: "merchants",
@@ -29,7 +29,7 @@ export const router = createRouter({
           path: "tools/collection-coordinates",
           name: "WenjiangCollectionCoordinates",
           component: () => import("./views/CollectionCoordinates.vue"),
-          meta: { title: "核验地图", group: "临时工具" },
+          meta: { title: "核验地图", group: "临时工具", affix: true },
         },
         {
           path: "reports",
@@ -41,7 +41,7 @@ export const router = createRouter({
         {
           path: "reports/vehicles", name: "WenjiangVehicleSummary",
           component: () => import("./views/VehicleSummary.vue"),
-          meta: { title: "车辆线路日报", group: "作业监管", affix:true },
+          meta: { title: "车辆线路日报", group: "作业监管" },
         },
         {
           path: "reports/details", name: "WenjiangVehicleDetails",
@@ -66,7 +66,7 @@ export const router = createRouter({
 
       ],
     },
-    { path: "/:pathMatch(.*)*", redirect: "/reports/vehicles" },
+    { path: "/:pathMatch(.*)*", redirect: "/tools/collection-coordinates" },
   ],
 });
 router.afterEach((to) => {

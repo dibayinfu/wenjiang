@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onDeactivated, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, ref, shallowRef, watch } from 'vue';
 import { AutoComplete, Checkbox, Popover } from '@arco-design/web-vue';
-import { IconClose, IconLeft, IconRight, IconSettings, IconUpload } from '@arco-design/web-vue/es/icon';
+import { IconClose, IconLeft, IconRight, IconRefresh, IconSettings, IconUpload } from '@arco-design/web-vue/es/icon';
 import PageHeader from '../components/PageHeader.vue';
+import CollectionLoginModal from '../components/CollectionLoginModal.vue';
+import { collectionVehicles } from '../mock/collection-vehicles';
+import { collectionApi, collectionAuth } from '../utils/collection-auth';
+import { COLLECTION_MIN_DATE, collectionToday, createCollectionOnlineLoader, type CollectionOnlineUpdate } from '../utils/collection-online';
 import RoutePlayback from '../components/RoutePlayback.vue';
 import { routeFrame, routeProgressPath, type RouteFrame } from '../utils/route-playback';
-import { createCollectionMap, type MapCircle, type CollectionMap, type MapProvider } from '../utils/collection-map';
+import { createCollectionMap, type MapFence, type CollectionMap, type MapProvider } from '../utils/collection-map';
 import { mapThemeOptions, readMapThemes, saveMapThemes, type MapTheme } from '../utils/map-themes';
+import { collectionFenceGeometry } from '../utils/collection-fence-geometry';
 import { gcj02ToBd09 } from '../utils/collection-coordinates';
 import { collectionHistoryDates, loadCollectionHistory, type CollectionBatches } from '../utils/collection-history';
 import { parseCollectionImport, parseFenceImport, parseRouteImport, type CollectionImportPoint } from '../utils/collection-import';
@@ -26,13 +31,32 @@ const routeInput = ref<HTMLInputElement>();
 const mapElement = ref<HTMLElement>();
 const mapToolbar = ref<HTMLElement>();
 const selectedDate = ref<string | undefined>(collectionHistoryDates[0]);
+const dataSource = ref<'online' | 'history' | 'manual'>('online');
+const onlineDate = ref(collectionToday(new Date(Date.now() - 86400000)));
+const selectedVehicle = ref(collectionVehicles[0]!.truckId);
+const vehicleOptions = collectionVehicles.map(vehicle => ({ value: vehicle.truckId, label: vehicle.label }));
+const refreshVersion = ref(0);
+const onlineBatches = shallowRef<CollectionBatches>({});
+const onlineWarnings = ref<string[]>([]);
+const onlineUpdated = ref('');
+const onlineProgress = ref('');
+const onlineLayers = shallowRef<CollectionOnlineUpdate['layers']>();
+const mapReady = shallowRef<CollectionMap>();
+const mapRendering = ref(false);
+let disposeLayers: (() => void) | undefined;
+const loadOnline = createCollectionOnlineLoader(collectionApi);
+let onlineController: AbortController | undefined;
+function disabledOnlineDate(date: Date) {
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return day < COLLECTION_MIN_DATE || day > collectionToday();
+}
 const dateOptions = collectionHistoryDates.map(date => ({
     value: date,
     label: `20${date.slice(0, 2)}-${date.slice(2, 4)}-${date.slice(4, 6)}`,
   }));
 const manualBatches = shallowRef<CollectionBatches>({});
 const historyBatches = shallowRef<CollectionBatches>({});
-const activeBatches = computed(() => selectedDate.value ? historyBatches.value : manualBatches.value);
+const activeBatches = computed(() => dataSource.value === 'online' ? onlineBatches.value : dataSource.value === 'history' ? historyBatches.value : manualBatches.value);
 const batch = computed(() => activeBatches.value.records);
 const fenceBatch = computed(() => activeBatches.value.fences);
 const routeBatch = computed(() => activeBatches.value.route);
@@ -77,10 +101,11 @@ const coordinateSystem = computed(() => mapProvider.value === 'baidu' ? 'BD-09' 
 function displayPosition(position: [number, number]) {
   return (mapProvider.value === 'baidu' ? gcj02ToBd09(position) : position).map(value => value.toFixed(6)).join('，');
 }
-const radius = ref(50);
+const radius = ref(0);
 const showNames = ref(false);
-const highlightUnmatched = ref(false);
-const canMatch = computed(() => Boolean(batch.value?.points.length && fenceBatch.value?.points.length));
+const highlightUnmatched = ref(true);
+const canMatch = computed(() => Boolean(batch.value?.points.length && fenceBatch.value?.points.length)
+  && (dataSource.value !== 'online' || (onlineLayers.value?.fences.status === 'complete' && onlineLayers.value.records.status === 'complete')));
 const unmatchedRows = computed(() => highlightUnmatched.value && canMatch.value
   ? unmatchedCollectionRows(batch.value!.points, fenceBatch.value!.points, radius.value)
   : new Map<CollectionImportPoint, CollectionImportPoint['rows']>());
@@ -97,27 +122,28 @@ const recordRowOptions = computed(() => {
 const unmatchedPointCount = computed(() => [...matchCounts.value].filter(([point, count]) => count === point.rows.length).length);
 const partialPointCount = computed(() => [...matchCounts.value].filter(([point, count]) => count > 0 && count < point.rows.length).length);
 const hasOverlays = computed(() => Boolean(batch.value?.points.length || fenceBatch.value?.points.length || routeBatch.value));
+const referenceFenceCount = computed(() => (fenceBatch.value?.points ?? []).filter(point => !point.fence).reduce((sum, point) => sum + point.rows.length, 0));
 const layerSummaries = computed(() => [
   batch.value && {
-    kind: 'records', color: 'arcoblue', fileName: batch.value.fileName,
-    label: `收运 ${batch.value.total}条 / ${batch.value.points.length}点`,
+    kind: 'records' as const, color: 'arcoblue', fileName: batch.value.fileName,
+    label: `收运明细 ${batch.value.total} 条 / ${batch.value.points.length} 个坐标`,
     skipped: batch.value.skipped,
     hint: '点击地图标记查看该位置的收运记录。',
   },
   fenceBatch.value && {
-    kind: 'fences', color: 'green', fileName: fenceBatch.value.fileName,
-    label: `围栏 ${fenceBatch.value.points.length}处 / ${fenceBatch.value.total - fenceBatch.value.skipped}点`,
+    kind: 'fences' as const, color: 'green', fileName: fenceBatch.value.fileName,
+    label: `收集点 ${fenceBatch.value.total - fenceBatch.value.skipped} 个 / ${fenceBatch.value.points.length} 处`,
     skipped: fenceBatch.value.skipped,
     hint: `共 ${fenceBatch.value.total - fenceBatch.value.skipped} 个收集点，点击绿色围栏查看详情。${fenceBatch.value.corrected ? `已按真实系统地图校正 ${fenceBatch.value.corrected} 点。` : ''}`,
   },
   routeBatch.value && {
-    kind: 'route', color: 'cyan', fileName: routeBatch.value.fileName,
-    label: `路线 ${routeBatch.value.total}点`,
+    kind: 'route' as const, color: 'cyan', fileName: routeBatch.value.fileName,
+    label: `轨迹点 ${routeBatch.value.total} 个`,
     skipped: routeBatch.value.skipped,
     hint: '浅青蓝为未回放轨迹，深青蓝为已回放轨迹；箭头表示行进方向。',
   },
 ].filter(layer => layer !== undefined));
-let circles: MapCircle[] = [];
+let fenceOverlays: MapFence[] = [];
 let activeMap: CollectionMap | undefined;
 async function applyMapTheme(value: MapTheme) {
   const map = activeMap;
@@ -180,6 +206,12 @@ async function selectSearch(mode: CollectionSearchMode, value: string) {
 }
 
 watch([rfidKeyword, merchantKeyword], clearSearch, { flush: 'sync' });
+watch([dataSource, selectedDate, onlineDate, selectedVehicle], () => {
+  rfidKeyword.value = '';
+  merchantKeyword.value = '';
+  clearSearch();
+  selectedDetail.value = undefined;
+});
 
 async function importFile(event: Event, kind: ImportKind) {
   const input = event.target as HTMLInputElement;
@@ -199,6 +231,7 @@ async function importFile(event: Event, kind: ImportKind) {
       manualBatches.value = { ...manualBatches.value, records: { ...parseCollectionImport(content), fileName: file.name } };
     }
     selectedDate.value = undefined;
+    dataSource.value = 'manual';
   } catch (cause) {
     importError.value = cause instanceof Error ? cause.message : '文件读取失败。';
   } finally {
@@ -206,7 +239,8 @@ async function importFile(event: Event, kind: ImportKind) {
   }
 }
 
-watch(selectedDate, async (date, _, onCleanup) => {
+watch([dataSource, selectedDate, refreshVersion], async ([source, date], _, onCleanup) => {
+  if (source !== 'history') return;
   historyBatches.value = {};
   dateError.value = '';
   dateLoading.value = Boolean(date);
@@ -226,51 +260,105 @@ watch(selectedDate, async (date, _, onCleanup) => {
   }
 }, { immediate: true });
 
-watch(radius, value => {
-  for (const circle of circles) circle.setRadius(value);
-});
+watch([dataSource, onlineDate, selectedVehicle, refreshVersion], async ([source, date, vehicleId, version], previous, onCleanup) => {
+  if (source !== 'online') {
+    if (source === 'manual') { dateLoading.value = false; dateError.value = ''; }
+    return;
+  }
+  const controller = new AbortController();
+  onlineController = controller;
+  onCleanup(() => controller.abort());
+  onlineBatches.value = {};
+  onlineWarnings.value = []; onlineUpdated.value = ''; onlineProgress.value = ''; onlineLayers.value = undefined;
+  dateError.value = ''; importError.value = ''; dateLoading.value = true;
+  clearSearch(); selectedDetail.value = undefined;
+  try {
+    const vehicle = collectionVehicles.find(item => item.truckId === vehicleId);
+    if (!vehicle) throw new Error('请选择有效车辆。');
+    const result = await loadOnline(vehicle, date, controller.signal, version !== previous?.[3], text => {
+      if (!controller.signal.aborted) onlineProgress.value = text;
+    }, () => collectionAuth.token, value => {
+      if (controller.signal.aborted) return;
+      onlineBatches.value = value.batches;
+      onlineWarnings.value = value.warnings;
+      onlineLayers.value = value.layers;
+      dateError.value = value.errors.join(' ');
+    });
+    if (!controller.signal.aborted) {
+      onlineBatches.value = result.batches;
+      onlineWarnings.value = result.warnings;
+      onlineLayers.value = result.layers;
+      dateError.value = result.errors.join(' ');
+      onlineUpdated.value = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+    }
+  } catch (cause) {
+    if (!controller.signal.aborted) dateError.value = cause instanceof Error ? cause.message : '接口数据加载失败。';
+  } finally {
+    if (!controller.signal.aborted) dateLoading.value = false;
+  }
+}, { immediate: true });
 
-watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, importedFences, importedRoute], _, onCleanup) => {
-  clearSearch();
-  rfidKeyword.value = '';
-  merchantKeyword.value = '';
-  selectedDetail.value = undefined;
-  const element = mapElement.value;
-  const recordPoints = imported?.points ?? [];
-  const fencePoints = importedFences?.points ?? [];
-  const center = recordPoints[0]?.position ?? fencePoints[0]?.position ?? importedRoute?.path[0];
-  mapError.value = '';
-  mapLoading.value = Boolean(center && element);
-  if (!center || !element) return;
-
+// 底图仅在容器、地图提供方或手动重试变化时创建，数据分批到达时复用同一实例。
+watch([mapElement, retry, mapProvider], async ([element, , provider], _, onCleanup) => {
   let cancelled = false;
-  let disposeMap: (() => void) | undefined;
+  let map: CollectionMap | undefined;
   onCleanup(() => {
     cancelled = true;
-    disposeMap?.();
+    disposeLayers?.();
+    if (activeMap === map) activeMap = undefined;
+    mapReady.value = undefined;
+    themeRequest++;
+    themeLoading.value = false;
+    themeError.value = '';
+    map?.destroy();
   });
-
+  if (!element) { mapLoading.value = false; return; }
+  mapLoading.value = true;
+  mapError.value = '';
   try {
-    // 独立容器隔离快速切换时尚未完成的 SDK 加载。
+    const center = batch.value?.points[0]?.position ?? fenceBatch.value?.points[0]?.position ?? routeBatch.value?.path[0] ?? [103.83, 30.70];
     const canvas = document.createElement('div');
     canvas.style.cssText = 'position:absolute;inset:0';
     element.replaceChildren(canvas);
-    const map = await createCollectionMap(mapProvider.value, canvas, center, currentTheme.value);
+    map = await createCollectionMap(provider, canvas, center, currentTheme.value);
     if (cancelled) { map.destroy(); canvas.remove(); return; }
     activeMap = map;
+    mapReady.value = map;
     void applyMapTheme(currentTheme.value);
-    let observer: ResizeObserver | undefined;
-    const stopEffects: (() => void)[] = [];
-    disposeMap = () => {
-      for (const stop of stopEffects) stop();
-      observer?.disconnect();
-      circles = [];
-      activeMap = undefined;
-      themeRequest++;
-      themeLoading.value = false;
-      themeError.value = '';
-      map.destroy();
-    };
+  } catch (cause) {
+    if (!cancelled) mapError.value = cause instanceof Error ? cause.message : `${mapProviderName.value}加载失败。`;
+  } finally {
+    if (!cancelled) mapLoading.value = false;
+  }
+}, { flush: 'post' });
+
+watch([batch, fenceBatch, routeBatch, mapReady, radius], async ([imported, importedFences, importedRoute, map], _, onCleanup) => {
+  const restoreSearch = searchPerformed.value;
+  const previousIndex = searchIndex.value;
+  clearSearch();
+  selectedDetail.value = undefined;
+  const element = mapElement.value;
+  if (!element || !map) return;
+  const recordPoints = imported?.points ?? [];
+  const fencePoints = importedFences?.points ?? [];
+  const recordPins = new Map<CollectionImportPoint, HTMLElement>();
+  const recordItems = new Map<CollectionImportPoint, HTMLButtonElement[]>();
+  const stopEffects: (() => void)[] = [];
+  let observer: ResizeObserver | undefined;
+  let cancelled = false;
+  const cleanup = () => {
+    if (cancelled) return;
+    cancelled = true;
+    for (const stop of stopEffects) stop();
+    observer?.disconnect();
+    fenceOverlays = [];
+    map.clear();
+    if (disposeLayers === cleanup) disposeLayers = undefined;
+  };
+  disposeLayers = cleanup;
+  onCleanup(cleanup);
+  mapRendering.value = true;
+  try {
     const routeLine = importedRoute ? map.route(importedRoute.path) : undefined;
     if (importedRoute?.samples.length) {
       const vehicle = document.createElement('div');
@@ -302,15 +390,18 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       strokeColor: '#00852e', strokeWeight: 2,
       fillColor: '#23a650', fillOpacity: 0.2, zIndex: 10,
     };
+    let painted = 0;
     for (const point of fencePoints) {
-      const circle = map.circle(point.position, radius.value, fenceStyle, () => {
-        selectedDetail.value = { kind: 'fences', point };
-      });
-      circles.push(circle);
+      if (++painted % 100 === 0) { await new Promise(resolve => setTimeout(resolve, 0)); if (cancelled) return; }
+      const geometry = collectionFenceGeometry(point, radius.value);
+      const click = () => { selectedDetail.value = { kind: 'fences', point }; };
+      const overlay = geometry.type === 'circle'
+        ? map.circle(geometry.center, geometry.radius, fenceStyle, click)
+        : map.polygon(geometry.path, fenceStyle, click);
+      fenceOverlays.push(overlay);
     }
-    const recordPins = new Map<CollectionImportPoint, HTMLElement>();
-    const recordItems = new Map<CollectionImportPoint, HTMLButtonElement[]>();
     for (const point of recordPoints) {
+      if (++painted % 100 === 0) { await new Promise(resolve => setTimeout(resolve, 0)); if (cancelled) return; }
       const content = document.createElement('div');
       content.className = 'collection-record-marker';
       const pin = document.createElement('i');
@@ -361,7 +452,7 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       });
     }
 
-    let selectedCircle: MapCircle | undefined;
+    let selectedCircle: MapFence | undefined;
     let selectedPin: HTMLElement | undefined;
     stopEffects.push(watch([selectedDetail, selectedRecordRowIndex], ([detail, rowIndex]) => {
       selectedCircle?.setOptions(fenceStyle);
@@ -371,7 +462,7 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       selectedPin?.querySelectorAll('.row-selected').forEach(item => item.classList.remove('row-selected'));
       selectedPin = undefined;
       if (detail?.kind === 'fences') {
-        selectedCircle = circles[fencePoints.indexOf(detail.point)];
+        selectedCircle = fenceOverlays[fencePoints.indexOf(detail.point)];
         selectedCircle?.setOptions({
           strokeColor: '#006b27', strokeWeight: 4,
           fillColor: '#23a650', fillOpacity: 0.30, zIndex: 20,
@@ -416,7 +507,14 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
       onCleanup(map.labels(items));
     }, { immediate: true }));
 
-    let fitted = recordPoints.length === 1 && !fencePoints.length && !importedRoute;
+    if (restoreSearch) {
+      const mode = rfidKeyword.value.trim() ? 'rfid' : 'merchant';
+      const keyword = mode === 'rfid' ? rfidKeyword.value : merchantKeyword.value;
+      searchResults.value = searchCollectionPoints(recordPoints, fencePoints, mode, keyword, true);
+      searchPerformed.value = true;
+      locateSearchResult(Math.max(0, Math.min(previousIndex, searchResults.value.length - 1)));
+    }
+    let fitted = restoreSearch || (recordPoints.length === 1 && !fencePoints.length && !importedRoute);
     observer = new ResizeObserver(() => {
       element.parentElement?.style.setProperty('--map-toolbar-height', `${mapToolbar.value?.offsetHeight ?? 0}px`);
       if (!element.clientWidth || !element.clientHeight) return;
@@ -430,111 +528,115 @@ watch([batch, fenceBatch, routeBatch, retry, mapProvider], async ([imported, imp
     if (mapToolbar.value) observer.observe(mapToolbar.value);
   } catch (cause) {
     if (cancelled) return;
-    disposeMap?.();
-    disposeMap = undefined;
+    cleanup();
+    mapRendering.value = false;
     mapError.value = cause instanceof Error ? cause.message : `${mapProviderName.value}加载失败。`;
   } finally {
-    if (!cancelled) mapLoading.value = false;
+    if (!cancelled) mapRendering.value = false;
   }
 }, { flush: 'post' });
 
-onDeactivated(() => { selectedDetail.value = undefined; });
+onDeactivated(() => { selectedDetail.value = undefined; onlineController?.abort(); });
+onActivated(() => {
+  if (dataSource.value === 'online' && onlineController?.signal.aborted) refreshVersion.value++;
+});
 </script>
 
 <template>
   <div class="gi_page page-content audit-map-page">
     <PageHeader title="核验地图" class="map-page-header">
-      <div class="map-search-controls">
-        <AutoComplete v-model="merchantKeyword" class="map-search-input" :data="merchantSuggestions" :filter-option="false" placeholder="输入商户名称搜索"
-          aria-label="商户名称搜索" allow-clear :disabled="dateLoading || mapLoading" @select="(value: string) => selectSearch('merchant', value)" />
-        <AutoComplete v-model="rfidKeyword" class="map-search-input" :data="rfidSuggestions" :filter-option="false" placeholder="输入 RFID 搜索"
-          aria-label="RFID 搜索" allow-clear :disabled="dateLoading || mapLoading" @select="(value: string) => selectSearch('rfid', value)" />
-        <div v-if="searchPerformed" class="search-results" role="status">
-          <template v-if="searchResults.length">
-            <a-button size="mini" aria-label="上一个搜索结果" :disabled="searchIndex === 0" @click="locateSearchResult(searchIndex - 1)"><IconLeft /></a-button>
-            <span>{{ searchIndex + 1 }}/{{ searchResults.length }}</span>
-            <a-button size="mini" aria-label="下一个搜索结果" :disabled="searchIndex === searchResults.length - 1" @click="locateSearchResult(searchIndex + 1)"><IconRight /></a-button>
-          </template>
-          <span v-else>无匹配结果</span>
-        </div>
-        <span v-else-if="noSuggestions" class="search-results" role="status">无匹配结果</span>
-      </div>
-      <div class="map-data-controls">
-        <div class="map-date-controls">
-          <template v-if="collectionHistoryDates.length">
-            <span class="date-label">数据日期</span>
-            <a-select v-model="selectedDate" :options="dateOptions" :disabled="!!reading"
-              placeholder="导入模式" aria-label="收运数据日期" style="width: 150px" />
-          </template>
-          <input ref="recordsInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'records')" />
-          <input ref="fencesInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'fences')" />
-          <input ref="routeInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'route')" />
-          <Popover trigger="click" position="br">
-            <a-button aria-label="导入设置"><template #icon><IconSettings /></template></a-button>
-            <template #content>
-              <div class="import-settings">
-                <strong>数据导入</strong>
-                <div class="import-setting-row">
-                  <div><span>收运明细</span><small>WGS-84 · data.list · lng / lat</small></div>
-                  <a-space :size="4">
-                    <a-button size="small" :loading="reading === 'records'" :disabled="!!reading && reading !== 'records'" @click="recordsInput?.click()">
-                      <template #icon><IconUpload /></template>导入收运明细
-                    </a-button>
-                    <a :href="recordsSample" download="收运明细样例.json" aria-label="下载收运明细样例">格式样例</a>
-                  </a-space>
-                </div>
-                <div class="import-setting-row">
-                  <div><span>商户收集点</span><small>BD-09 · data.list · name / lng / lat</small></div>
-                  <a-space :size="4">
-                    <a-button size="small" :loading="reading === 'fences'" :disabled="!!reading && reading !== 'fences'" @click="fencesInput?.click()">
-                      <template #icon><IconUpload /></template>导入商户收集点
-                    </a-button>
-                    <a :href="fencesSample" download="商户收集点样例.json" aria-label="下载商户收集点样例">格式样例</a>
-                  </a-space>
-                </div>
-                <div class="import-setting-row">
-                  <div><span>车辆路线</span><small>WGS-84 · data.positions · longitude / latitude</small></div>
-                  <a-space :size="4">
-                    <a-button size="small" :loading="reading === 'route'" :disabled="!!reading && reading !== 'route'" @click="routeInput?.click()">
-                      <template #icon><IconUpload /></template>导入路线
-                    </a-button>
-                    <a :href="routeSample" download="路线样例.json" aria-label="下载路线样例">格式样例</a>
-                  </a-space>
-                </div>
-              </div>
+      <div class="map-query-controls">
+        <div class="map-query-fields">
+          <a-select v-model="selectedVehicle" class="vehicle-filter" :options="vehicleOptions" :disabled="dataSource !== 'online'" aria-label="车牌号" />
+          <a-date-picker v-if="dataSource === 'online'" v-model="onlineDate" class="date-filter" value-format="YYYY-MM-DD" :allow-clear="false" :disabled-date="disabledOnlineDate" aria-label="接口数据日期" />
+          <a-select v-else-if="dataSource === 'history'" v-model="selectedDate" class="date-filter" :options="dateOptions" :disabled="!!reading" placeholder="请选择日期" aria-label="本地数据日期" />
+          <a-date-picker v-else class="date-filter" disabled placeholder="文件日期" aria-label="手动导入日期" />
+          <AutoComplete v-model="merchantKeyword" class="map-search-input merchant-filter" :data="merchantSuggestions" :filter-option="false" placeholder="输入商户名称搜索"
+            aria-label="商户名称搜索" allow-clear :disabled="mapLoading || mapRendering || (!batch && !fenceBatch)" @select="(value: string) => selectSearch('merchant', value)" />
+          <AutoComplete v-model="rfidKeyword" class="map-search-input rfid-filter" :data="rfidSuggestions" :filter-option="false" placeholder="输入 RFID 搜索"
+            aria-label="RFID 搜索" allow-clear :disabled="mapLoading || mapRendering || !batch" @select="(value: string) => selectSearch('rfid', value)" />
+          <div v-if="searchPerformed" class="search-results" role="status">
+            <template v-if="searchResults.length">
+              <a-button size="mini" aria-label="上一个搜索结果" :disabled="searchIndex === 0" @click="locateSearchResult(searchIndex - 1)"><IconLeft /></a-button>
+              <span>{{ searchIndex + 1 }}/{{ searchResults.length }}</span>
+              <a-button size="mini" aria-label="下一个搜索结果" :disabled="searchIndex === searchResults.length - 1" @click="locateSearchResult(searchIndex + 1)"><IconRight /></a-button>
             </template>
-          </Popover>
+            <span v-else>无匹配结果</span>
+          </div>
+          <span v-else-if="noSuggestions" class="search-results" role="status">无匹配结果</span>
         </div>
-        <div v-if="layerSummaries.length" class="layer-summaries" aria-label="当前日期数据统计" aria-live="polite">
-          <Popover v-for="layer in layerSummaries" :key="layer.kind" :trigger="['hover', 'click']" position="bl">
-            <button type="button" class="layer-summary" :aria-label="`${layer.label}，查看导入信息`">
-              <a-tag size="small" :color="layer.skipped ? 'orange' : layer.color">
-                {{ layer.label }}<template v-if="layer.skipped"> · 跳过 {{ layer.skipped }}</template>
-              </a-tag>
-            </button>
+        <div class="map-query-actions">
+          <a-button :loading="dateLoading" :disabled="dataSource === 'manual'" aria-label="更新数据" title="更新" @click="refreshVersion++"><template #icon><IconRefresh /></template></a-button>
+          <Popover trigger="click" position="br">
+            <a-button aria-label="数据设置" title="设置"><template #icon><IconSettings /></template></a-button>
             <template #content>
-              <div class="layer-details">
-                <strong>{{ layer.fileName }}</strong>
-                <div>{{ layer.hint }}</div>
-                <div v-if="layer.skipped">已跳过 {{ layer.skipped }} 条无效数据。</div>
+              <div class="data-settings">
+                <section class="data-settings-section">
+                  <strong>数据模式</strong>
+                  <a-radio-group v-model="dataSource" type="button" size="small" aria-label="地图数据来源">
+                    <a-radio value="online">接口数据</a-radio>
+                    <a-radio value="history">本地数据</a-radio>
+                    <a-radio value="manual">手动导入</a-radio>
+                  </a-radio-group>
+                </section>
+                <section class="data-settings-section">
+                  <strong>当前数据</strong>
+                  <div v-if="layerSummaries.length" class="layer-summaries" aria-label="当前日期数据统计" aria-live="polite">
+                    <a-tooltip v-for="layer in layerSummaries" :key="layer.kind" :content="`${layer.fileName}；${layer.hint}`" position="left">
+                      <a-tag :color="layer.skipped ? 'orange' : layer.color">
+                        {{ layer.label }}<template v-if="dataSource === 'online' && onlineLayers?.[layer.kind].status === 'loading'"> · 加载中</template><template v-if="layer.skipped"> · 跳过 {{ layer.skipped }}</template>
+                      </a-tag>
+                    </a-tooltip>
+                  </div>
+                  <span v-else class="settings-note">暂无已加载数据</span>
+                  <div v-if="dataSource === 'online'" class="online-progress settings-note" aria-live="polite">{{ collectionAuth.visible ? '请登录后加载接口数据…' : onlineProgress || (dateLoading ? '正在获取数据，已到达的图层会先显示…' : '尚未加载数据，请点击更新。') }}</div>
+                  <small v-if="dataSource === 'online' && onlineUpdated" class="settings-note">{{ dateError ? '部分更新于' : '更新于' }} {{ onlineUpdated }} · 收集点为最新数据</small>
+                  <small v-if="dataSource === 'history' && fenceBatch?.snapshotAt" class="settings-note">收集点使用 {{ new Date(fenceBatch.snapshotAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) }} 的本地围栏快照；日期只切换收运明细和轨迹。</small>
+                </section>
+                <section v-if="dataSource === 'manual'" class="data-settings-section import-settings">
+                  <strong>手动导入</strong>
+                  <span class="settings-note">可分别导入收运明细、收集点和轨迹 JSON 文件。</span>
+                  <div class="import-setting-row">
+                    <a-button size="small" :loading="reading === 'records'" :disabled="!!reading && reading !== 'records'" @click="recordsInput?.click()"><template #icon><IconUpload /></template>导入收运明细</a-button>
+                    <a :href="recordsSample" download="收运明细样例.json" aria-label="下载收运明细样例">格式样例</a>
+                  </div>
+                  <div class="import-setting-row">
+                    <a-button size="small" :loading="reading === 'fences'" :disabled="!!reading && reading !== 'fences'" @click="fencesInput?.click()"><template #icon><IconUpload /></template>导入商户收集点</a-button>
+                    <a :href="fencesSample" download="商户收集点样例.json" aria-label="下载商户收集点样例">格式样例</a>
+                  </div>
+                  <div class="import-setting-row">
+                    <a-button size="small" :loading="reading === 'route'" :disabled="!!reading && reading !== 'route'" @click="routeInput?.click()"><template #icon><IconUpload /></template>导入轨迹</a-button>
+                    <a :href="routeSample" download="路线样例.json" aria-label="下载路线样例">格式样例</a>
+                  </div>
+                </section>
               </div>
             </template>
           </Popover>
         </div>
       </div>
     </PageHeader>
+    <input ref="recordsInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'records')" />
+    <input ref="fencesInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'fences')" />
+    <input ref="routeInput" type="file" accept=".json,application/json" hidden @change="importFile($event, 'route')" />
     <a-alert v-if="importError || dateError" type="error">{{ importError || dateError }}</a-alert>
+    <a-alert v-if="dataSource === 'online' && onlineWarnings.length" type="warning">{{ onlineWarnings.join(' ') }}</a-alert>
+    <a-alert v-if="dataSource === 'online' && !dateLoading && !hasOverlays && !dateError" type="info">所选日期暂无可显示的有效坐标。</a-alert>
+    <CollectionLoginModal />
 
     <section class="panel map-panel" aria-label="收运坐标地图">
-      <a-empty v-if="dateLoading" description="正在读取该日期的收运数据…" />
-      <a-empty v-else-if="dateError" description="该日期数据暂时无法显示。" />
-      <a-empty v-else-if="!layerSummaries.length" description="请选择收运明细、商户收集点或路线 JSON 文件，在地图上查看。" />
-      <a-empty v-else-if="!hasOverlays" description="导入的文件中没有可显示的坐标。" />
+      <a-empty v-if="dateLoading && dataSource !== 'online'" description="正在读取该日期的收运数据…" />
+      <a-empty v-else-if="dateError && dataSource !== 'online'" description="该日期数据暂时无法显示。" />
+      <a-empty v-else-if="dataSource !== 'online' && !layerSummaries.length" description="请选择收运明细、商户收集点或路线 JSON 文件，在地图上查看。" />
+      <a-empty v-else-if="dataSource !== 'online' && !hasOverlays" description="导入的文件中没有可显示的坐标。" />
       <template v-else>
         <div class="map-frame" :class="{ 'has-playback': !!routeBatch }">
           <div ref="mapElement" class="coordinate-map" role="region" :aria-label="`收运明细${mapProviderName}`" />
           <div ref="mapToolbar" class="import-toolbar">
             <div class="map-settings-control">
+              <Checkbox v-model="showNames">显示名称</Checkbox>
+              <a-tooltip :content="canMatch ? `收运坐标位于同名商户的当前核验范围内才算匹配。${highlightUnmatched ? `全部未匹配 ${unmatchedPointCount} 个坐标点（红色），部分未匹配 ${partialPointCount} 个坐标点（橙色）。` : ''}` : '收运明细和收集点加载完成后可核对匹配情况。'">
+                <Checkbox v-model="highlightUnmatched" :disabled="!canMatch">高亮未匹配</Checkbox>
+              </a-tooltip>
               <Popover trigger="click" position="br">
                 <a-button size="small" aria-label="地图显示设置"><template #icon><IconSettings /></template></a-button>
                 <template #content>
@@ -553,15 +655,13 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                     </div>
                     <span v-if="themeError" class="theme-error" role="status">{{ themeError }}</span>
                     <div v-if="fenceBatch?.points.length" class="map-setting-field">
-                      <span id="fence-radius-label">围栏半径</span>
+                      <span id="fence-radius-label">核验范围（默认使用原始围栏）</span>
                       <a-radio-group v-model="radius" type="button" size="mini" aria-labelledby="fence-radius-label">
+                        <a-radio :value="0">原始围栏</a-radio>
                         <a-radio v-for="meters in [10, 20, 30, 50, 100]" :key="meters" :value="meters">{{ meters }} 米</a-radio>
                       </a-radio-group>
+                      <small v-if="referenceFenceCount">{{ referenceFenceCount }} 个收集点未提供原始围栏，默认使用 50 米参考圆；接口数据优先使用真实围栏。</small>
                     </div>
-                    <Checkbox v-model="showNames">显示名称</Checkbox>
-                    <Checkbox v-model="highlightUnmatched" :disabled="!canMatch">高亮未匹配收运点坐标</Checkbox>
-                    <small>{{ canMatch ? '收运坐标位于同名商户的围栏内，才算匹配。' : '导入收运明细和收集点后可核对匹配情况。' }}</small>
-                    <small v-if="highlightUnmatched && canMatch">全部未匹配 {{ unmatchedPointCount }} 个坐标点（红色），部分未匹配 {{ partialPointCount }} 个坐标点（橙色）。同坐标的记录逐条核对。</small>
                   </div>
                 </template>
               </Popover>
@@ -582,14 +682,18 @@ onDeactivated(() => { selectedDetail.value = undefined; });
                   <template #option="{ data }"><span class="overlap-option">{{ data.label }}</span></template>
                 </a-select>
                 <a-descriptions v-if="selectedFenceRow" class="point-fields" :column="1" size="small" layout="vertical">
+                  <a-descriptions-item label="收集点编号">{{ selectedFenceRow.id || '—' }}</a-descriptions-item>
                   <a-descriptions-item label="收集点名称">{{ selectedFenceRow.name }}</a-descriptions-item>
                   <a-descriptions-item label="所属商户">{{ selectedFenceRow.merchantName }}</a-descriptions-item>
+                  <a-descriptions-item label="所属机构">{{ selectedFenceRow.organization || '—' }}</a-descriptions-item>
                   <a-descriptions-item label="地址">{{ selectedFenceRow.address }}</a-descriptions-item>
-                  <a-descriptions-item label="坐标">
-                    <a-tooltip :content="`${mapProviderName} ${coordinateSystem}（经度，纬度）；原始导出 BD-09 为 ${selectedDetail.point.sourcePosition.join('，')}${selectedDetail.point.mapSourcePosition ? `；已按真实系统地图 BD-09 ${selectedDetail.point.mapSourcePosition.join('，')} 校正` : ''}`">
-                      <span>{{ displayPosition(selectedDetail.point.position) }}</span>
+                  <a-descriptions-item label="围栏中心坐标">
+                    <a-tooltip :content="`原始接口/文件坐标：${selectedDetail.point.sourcePosition?.join('，') ?? '未提供'}；当前坐标用于围栏绘制、定位和匹配。`">
+                      <span>{{ mapProvider === 'baidu' && selectedDetail.point.mapSourcePosition ? selectedDetail.point.mapSourcePosition.map(value => value.toFixed(6)).join('，') : displayPosition(selectedDetail.point.position) }}</span>
                     </a-tooltip>
                   </a-descriptions-item>
+                  <a-descriptions-item label="当前核验范围">{{ radius > 0 ? `自定义圆形 · ${radius} 米` : selectedDetail.point.fence?.type === 'circle' ? `原始圆形 · ${selectedDetail.point.fence.radius} 米` : selectedDetail.point.fence?.type === 'polygon' ? '原始多边形' : '参考圆形 · 50 米（未提供原始围栏）' }}</a-descriptions-item>
+                  <a-descriptions-item v-if="selectedDetail.point.geometrySource === 'verified'" label="坐标来源">已核验围栏快照；历史文件原坐标保留供核对。</a-descriptions-item>
                   <a-descriptions-item label="更新时间">{{ selectedFenceRow.updateTime }}</a-descriptions-item>
                 </a-descriptions>
               </template>
@@ -624,42 +728,32 @@ onDeactivated(() => { selectedDetail.value = undefined; });
 </template>
 
 <style scoped>
-.map-page-header :deep(.module-header-actions) { flex: 1; min-width: 0; justify-content: space-between; }
-.map-page-header :deep(.module-header-actions > .arco-space-item:first-child) { flex: 1; min-width: 0; }
-.map-search-controls, .map-date-controls { display: flex; align-items: center; gap: 8px; }
-.map-search-controls { flex-wrap: wrap; width: 100%; }
-.map-data-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
-.map-date-controls { flex-wrap: wrap; justify-content: flex-end; }
-.date-label { font-size: 12px; color: var(--color-text-2); white-space: nowrap; }
-.map-search-controls :deep(.map-search-input) { flex: 0 1 260px; width: 260px; max-width: 100%; }
+.map-page-header :deep(.module-header-actions) { flex: 1; min-width: 0; }
+.map-page-header :deep(.module-header-actions > .arco-space-item) { flex: 1; min-width: 0; margin-bottom: 0 !important; }
+.map-query-controls { display: flex; align-items: center; gap: 8px; width: 100%; }
+.map-query-fields { display: flex; align-items: center; flex-wrap: wrap; flex: 1; min-width: 0; gap: 8px; }
+.map-query-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; margin-inline-start: auto; }
+.map-query-controls :deep(.vehicle-filter) { flex: 0 0 140px; width: 140px; }
+.map-query-controls :deep(.date-filter) { flex: 0 0 148px; width: 148px; }
+.map-query-controls :deep(.map-search-input) { flex: 0 0 180px; width: 180px; max-width: 100%; }
 .search-results { display: flex; align-items: center; gap: 4px; color: var(--color-text-2); font-size: 12px; white-space: nowrap; }
 .audit-map-page > .map-panel { flex: 1 0 392px; min-height: 392px; display: flex; flex-direction: column; }
-.import-settings { width: min(380px, calc(100vw - 64px)); }
-.import-setting-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; }
-.import-setting-row > div:first-child { flex: 1 1 100%; }
-.import-setting-row small { display: block; color: var(--color-text-3); overflow-wrap: anywhere; }
+.data-settings { width: min(370px, calc(100vw - 64px)); max-height: 70vh; overflow-y: auto; }
+.data-settings-section { display: flex; flex-direction: column; gap: 10px; }
+.data-settings-section + .data-settings-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border-2); }
+.settings-note { color: var(--color-text-3); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.import-setting-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 .import-setting-row a { color: rgb(var(--primary-6)); white-space: nowrap; }
-.import-toolbar, .layer-summaries, .map-settings-control {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-}
+.import-toolbar, .map-settings-control { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .import-toolbar { position: absolute; z-index: 13; top: 12px; left: 12px; right: 12px; }
-.layer-summaries { justify-content: flex-end; }
-.map-settings-control { padding: 4px; background: var(--color-bg-2); border-radius: 4px; box-shadow: 0 2px 8px #0001; }
-.map-settings-control { margin-inline-start: auto; color: var(--color-text-2); }
+.layer-summaries { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.map-settings-control { padding: 4px; background: var(--color-bg-2); border-radius: 4px; box-shadow: 0 2px 8px #0001; margin-inline-start: auto; color: var(--color-text-2); }
 .map-display-settings { display: flex; flex-direction: column; gap: 10px; width: min(260px, calc(100vw - 64px)); }
 .map-display-settings small { color: var(--color-text-3); }
-.layer-summary { display: inline-flex; padding: 0; border: 0; background: none; }
-.layer-details { max-width: 240px; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .map-page-header { align-items: stretch; }
-  .map-page-header :deep(.module-header-actions > .arco-space-item:first-child) { flex-basis: 100%; }
-  .map-page-header :deep(.module-header-actions > .arco-space-item:last-child) { margin-inline-start: auto; }
-  .map-search-controls :deep(.map-search-input) { flex: 1 1 100%; width: 100%; }
-  .layer-summaries { column-gap: 4px; }
-  .layer-summary :deep(.arco-tag) { padding-inline: 4px; }
+  .map-query-controls :deep(.vehicle-filter), .map-query-controls :deep(.date-filter) { flex: 1 1 calc(50% - 4px); width: auto; }
+
 }
 .map-frame {
   flex: 1;

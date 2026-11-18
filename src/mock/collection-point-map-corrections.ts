@@ -5,7 +5,16 @@ export const collectionPointMapCorrections: {
   fenceId: string;
   exportPosition: [number, number];
   mapPosition: [number, number]; // BD-09，真实系统直接传给 BMapGL.Point。
+  radius?: number;
 }[] = [
+  {
+    // 2026-11-18 按原系统 WGS-84 边界转 BD-09 后的外接矩形中心核验。
+    // 旧文件缺少边界，仅当围栏 ID 与旧坐标同时匹配时应用此已核验快照。
+    fenceId: 'geofence-1317211332394749952',
+    exportPosition: [103.83768, 30.697826],
+    mapPosition: [103.8369165, 30.698034],
+    radius: 30,
+  },
   {
     fenceId: 'geofence-1317211335062327296',
     exportPosition: [103.827297, 30.696341],
