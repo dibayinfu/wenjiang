@@ -124,8 +124,8 @@ export function createCollectionOnlineLoader(api: CollectionApi) {
                 api.all('/api/collectionPoints', { merchantIds: '', name: '', org: '', street: '' }, controller.signal),
                 api.all('/api/collectionPoint/mapPoints', { status: '1' }, controller.signal),
               ]);
-              const selected = selectRegisteredCollectionPoints(mapRows, registry);
-              // 新版 mapPoints 只返回点位，绑定围栏需按收集点 ID 批量补全。
+              const selected = selectRegisteredCollectionPoints(mapRows, registry, { allowMissingMapFenceId: true });
+              // mapPoints 可省略围栏 ID 和边界，按正式档案绑定批量补全。
               const missing = selected.rows.filter(row => row.fenceId && !row.fenceLnglats);
               for (let offset = 0; offset < missing.length; offset += 200) {
                 const group = missing.slice(offset, offset + 200);

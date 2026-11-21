@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parseCollectionImport, parseFenceImport, parseRouteImport } from '../src/utils/collection-import.ts';
+
+test('手动导入跳过有状态且未启用的点，兼容历史无状态文件', () => {
+  const point = { name: '测试收集点', lng: 103.8, lat: 30.6 };
+  const list = [{ ...point, id: 1, status: 1 }, { ...point, id: 2, status: '1' },
+    { ...point, id: 3, status: 0 }, { ...point, id: 4, status: '0' },
+    { ...point, id: 5 }, { ...point, id: 6, status: true }];
+  const result = parseFenceImport(JSON.stringify({ data: { list } }));
+  assert.equal(result.skipped, 3);
+  assert.deepEqual(result.points.flatMap(point => point.rows.map(row => row.id)), ['1', '2', '5']);
+});
 import { gcj02ToBd09 } from '../src/utils/collection-coordinates.ts';
 
 test('收运明细、商户围栏和轨迹按各自的源坐标系转换到高德坐标', () => {
