@@ -50,3 +50,13 @@ test('本地快照拒绝混入无正式档案的额外围栏', () => {
   assert.throws(() => parseCollectionPointSnapshot(JSON.stringify(invalid)), /正式档案核验/);
   assert.throws(() => parseCollectionPointSnapshot(JSON.stringify({ ...snapshot, registry: undefined })), /正式收集点档案/);
 });
+
+test('本地快照跳过地图或正式档案中禁用的点，保留其余启用点', () => {
+  const [disabledOnMap, disabledInRegistry, enabled] = snapshot.data.list;
+  const list = [{ ...disabledOnMap, status: 0 }, disabledInRegistry, { ...enabled, status: '1' }];
+  const registry = list.map(point => ({ ...snapshot.registry.list.find(row => row.id === point.id),
+    status: point.id === disabledInRegistry.id ? '0' : 1 }));
+  const mixed = { ...snapshot, data: { totalCount: list.length, list }, registry: { totalCount: registry.length, list: registry } };
+  const result = parseCollectionPointSnapshot(JSON.stringify(mixed));
+  assert.deepEqual(result.points.flatMap(point => point.rows.map(row => row.id)), [String(enabled.id)]);
+});

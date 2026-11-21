@@ -9,13 +9,12 @@ test('只接受本机构正式档案及其绑定商户和围栏，排除清淳�
   const invalid = [
     { ...point, id: 'foreign', name: '清淳家园1期' },
     { ...point, org: '其他机构' }, { ...point, merchantId: 999 },
-    { ...point, fenceId: 'old-fence' }, { ...point, status: 0 },
+    { ...point, fenceId: 'old-fence' },
   ];
   const result = selectRegisteredCollectionPoints([point, ...invalid], [official]);
   assert.equal(result.excluded, invalid.length);
   assert.deepEqual(result.rows, [{ ...point, ...official }]);
   assert.equal(selectRegisteredCollectionPoints([point], [{ ...official, org: '其他机构' }]).rows.length, 0);
-  assert.equal(selectRegisteredCollectionPoints([point], [{ ...official, status: 0 }]).rows.length, 0);
 });
 
 test('不按名称或经纬度范围误删正式多边形，名称地址取正式档案', () => {

@@ -21,17 +21,24 @@ function setup(fetcher) {
   return { api, token: () => token, prompts: () => prompts };
 }
 
-test('新版地图接口不含围栏时批量补全：香香米使用原始 30 米，跨日复用且更新重新读取', async () => {
-  const point = { ...registeredPoint, id: 289, name: '温江区香香米快餐店（收集点）', fenceId: 'fence-289', lng: 103.81, lat: 30.70, fenceLnglats: '' };
+test('地图接口省略围栏 ID 和边界时按档案绑定批量补全，并支持缓存和更新', async () => {
+  const mapPointWithoutFenceId = { ...mapPoint, id: 289, name: '温江区香香米快餐店（收集点）', lng: 103.81, lat: 30.70, fenceLnglats: '' };
+  const point = { ...mapPointWithoutFenceId, fenceId: 'fence-289' };
   const second = { ...point, id: 290, fenceId: 'fence-290' };
+  const conflicting = { ...point, id: 291, fenceId: 'fence-291' };
+  let secondStatus = 1;
   let calls = 0;
   const client = setup(async url => {
-    if (url.pathname === '/api/collectionPoints') return json({ totalCount: 2, list: [point, second] });
-    if (url.pathname === '/api/collectionPoint/mapPoints') return json([point, second]);
+    if (url.pathname === '/api/collectionPoints') return json({ totalCount: 3, list: [point, { ...second, status: secondStatus }, conflicting] });
+    if (url.pathname === '/api/collectionPoint/mapPoints') {
+      assert.equal(url.searchParams.get('status'), '1');
+      return json([mapPointWithoutFenceId, second, { ...conflicting, fenceId: 'old-fence' }]);
+    }
     if (url.pathname === '/api/collectionPoint/fences') {
       calls++;
-      assert.equal(url.searchParams.get('ids'), '289,290');
-      return json([second, point].map(row => ({ id: row.id, fenceId: row.fenceId, fenceRadius: 30, fenceLnglats: '103.81,30.70' })));
+      assert.equal(url.searchParams.get('ids'), secondStatus === 1 ? '289,290' : '289');
+      const rows = secondStatus === 1 ? [second, point] : [point];
+      return json(rows.map(row => ({ id: row.id, fenceId: row.fenceId, fenceRadius: 30, fenceLnglats: '103.81,30.70' })));
     }
     if (url.pathname === '/api/plateRecord/details') return json({ totalCount: 0, list: [] });
     return json({ positions: [] });
@@ -39,12 +46,15 @@ test('新版地图接口不含围栏时批量补全：香香米使用原始 30 �
   const load = createCollectionOnlineLoader(client.api);
   const result = await load(collectionVehicles[0], '2026-11-10', signal(), false, () => {}, client.token);
   assert.equal(result.layers.fences.status, 'complete');
+  assert.equal(result.batches.fences.total, 2);
   const actual = result.batches.fences.points.find(p => p.rows.some(row => row.id === '289'));
   assert.equal(actual.fence.radius, 30);
   assert.equal(collectionFenceGeometry(actual, 0).radius, 30);
   await load(collectionVehicles[0], '2026-11-11', signal(), false, () => {}, client.token);
   assert.equal(calls, 1);
-  await load(collectionVehicles[0], '2026-11-11', signal(), true, () => {}, client.token);
+  secondStatus = 0;
+  const refreshed = await load(collectionVehicles[0], '2026-11-11', signal(), true, () => {}, client.token);
+  assert.deepEqual(refreshed.batches.fences.points.flatMap(point => point.rows.map(row => row.id)), ['289']);
   assert.equal(calls, 2);
 });
 

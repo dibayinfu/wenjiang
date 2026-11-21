@@ -4,7 +4,7 @@ import { readCollectionFenceGeometry } from './collection-fence-geometry.ts';
 import type { PointFence } from '../mock/operations.ts';
 import { routeTimestamp, type RouteSample } from './route-playback.ts';
 import { collectionPointMapCorrections } from '../mock/collection-point-map-corrections.ts';
-import { selectRegisteredCollectionPoints } from './collection-point-scope.ts';
+import { isEnabledCollectionPoint, selectRegisteredCollectionPoints } from './collection-point-scope.ts';
 
 interface CollectionImportRow {
   id: number;
@@ -121,11 +121,12 @@ export function parseFenceImport(text: string, options: { legacyCorrections?: bo
   let skipped = 0;
   let corrected = 0;
   for (const record of records) {
-    const position = isObject(record) ? readPosition(record.lng, record.lat) : undefined;
-    if (!isObject(record) || typeof record.name !== 'string' || !record.name.trim()) {
+    if (!isObject(record) || typeof record.name !== 'string' || !record.name.trim()
+      || ('status' in record && !isEnabledCollectionPoint(record.status))) {
       skipped++;
       continue;
     }
+    const position = readPosition(record.lng, record.lat);
 
     // 真实系统地图使用独立的 mapPoints 数据，列表 lng/lat 并非始终同步。
     // 同时核对围栏 ID 和原坐标，避免将校正快照应用到后续已修改的位置。
